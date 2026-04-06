@@ -71,4 +71,5 @@ bash scripts/serve_llama_cpp.sh
 - `SERVE_LLAMA_CPP=true` makes `run_chatbot.sh` start `llama-server` automatically.
 - Set either `LLAMA_CPP_MODEL_PATH` or `LLAMA_CPP_HF_REPO` in `.env`.
 - `LLAMA_CPP_HF_REPO` is the easiest path on a fresh system because `llama-server` can fetch the GGUF model itself.
+- If Hugging Face returns `401`, set `LLAMA_CPP_HF_TOKEN=hf_...` in `.env` and retry. `scripts/serve_llama_cpp.sh` will pass it through as `--hf-token`.
 - The first launch can take several minutes while the model downloads and warms up.

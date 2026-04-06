@@ -23,6 +23,7 @@ LLAMA_CPP_JINJA="${LLAMA_CPP_JINJA:-true}"
 LLAMA_CPP_REASONING="${LLAMA_CPP_REASONING:-off}"
 LLAMA_CPP_EXTRA_ARGS="${LLAMA_CPP_EXTRA_ARGS:-}"
 LLAMA_CPP_ENABLE_TOOLS="${LLAMA_CPP_ENABLE_TOOLS:-true}"
+LLAMA_CPP_HF_TOKEN="${LLAMA_CPP_HF_TOKEN:-${HF_TOKEN:-}}"
 
 log() {
   echo "[llama.cpp] $*"
@@ -84,6 +85,10 @@ if [ -n "${LLAMA_CPP_API_KEY:-}" ]; then
   cmd+=("--api-key" "${LLAMA_CPP_API_KEY}")
 fi
 
+if [ -n "${LLAMA_CPP_HF_TOKEN}" ]; then
+  cmd+=("--hf-token" "${LLAMA_CPP_HF_TOKEN}")
+fi
+
 if [ -n "${LLAMA_CPP_MODEL_PATH:-}" ]; then
   cmd+=("-m" "${LLAMA_CPP_MODEL_PATH}")
 elif [ -n "${LLAMA_CPP_HF_REPO:-}" ]; then
@@ -98,4 +103,10 @@ if [ -n "${LLAMA_CPP_EXTRA_ARGS}" ]; then
 fi
 
 log "Starting ${SERVER_BIN} on ${LLAMA_CPP_HOST}:${LLAMA_CPP_PORT}"
+if [ -n "${LLAMA_CPP_HF_REPO:-}" ]; then
+  log "Model source: Hugging Face repo ${LLAMA_CPP_HF_REPO}"
+  if [ -n "${LLAMA_CPP_HF_TOKEN}" ]; then
+    log "Using Hugging Face token authentication"
+  fi
+fi
 exec "${cmd[@]}"
