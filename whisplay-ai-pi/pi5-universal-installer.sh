@@ -79,10 +79,11 @@ patch_whisplay_driver_installer() {
   fi
 
   if grep -Fq '[[ "$warned" -eq 0 ]] && ok "No obvious power warnings detected since boot."' "${installer_path}"; then
-    python3 - <<PY
+    INSTALLER_PATH="${installer_path}" python3 - <<'PY'
 from pathlib import Path
+import os
 
-path = Path(${installer_path@Q})
+path = Path(os.environ["INSTALLER_PATH"])
 text = path.read_text()
 old = '  [[ "$warned" -eq 0 ]] && ok "No obvious power warnings detected since boot."\n}\n'
 new = '  if [[ "$warned" -eq 0 ]]; then\n    ok "No obvious power warnings detected since boot."\n  fi\n\n  return 0 # keep power warnings non-fatal for callers\n}\n'
