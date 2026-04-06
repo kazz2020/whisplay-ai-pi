@@ -1,6 +1,9 @@
 #!/bin/bash
 
 PROJECT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
 
 # if graphical interface is enabled, ask user whether to disable graphical interface
 if [ "$(systemctl get-default)" == "graphical.target" ]; then

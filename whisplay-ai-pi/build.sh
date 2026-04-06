@@ -13,13 +13,32 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+load_node_env() {
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+  if [ -s "$NVM_DIR/nvm.sh" ]; then
+    . "$NVM_DIR/nvm.sh"
+  fi
+  if [ -s "$NVM_DIR/bash_completion" ]; then
+    . "$NVM_DIR/bash_completion"
+  fi
+}
+
 # check if .env file exists
 if [ ! -f .env ]; then
     echo "Please create a .env file with the necessary environment variables. Please refer to .env.template for guidance."
     exit 1
 fi
 
-source ~/.bashrc
+load_node_env
+
+if [ -f ~/.bashrc ]; then
+  . ~/.bashrc || true
+fi
+
+if ! command_exists node || ! command_exists npm; then
+  echo "Error: node/npm not found in this shell. Run install_dependencies.sh first, then rerun build.sh."
+  exit 1
+fi
 
 if [ "$use_npm" = true ]; then
   echo "Using npm to build the project."
