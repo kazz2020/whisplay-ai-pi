@@ -48,6 +48,7 @@ sudo apt-get install -y \
   cmake \
   ninja-build \
   pkg-config \
+  libssl-dev \
   libcurl4-openssl-dev \
   libopenblas-dev
 
@@ -63,6 +64,7 @@ cmake_args=(
   -DCMAKE_BUILD_TYPE=Release
   -DGGML_NATIVE=ON
   -DGGML_CURL=ON
+  -DLLAMA_OPENSSL=ON
   -DLLAMA_BUILD_SERVER=ON
   -DLLAMA_BUILD_TESTS=OFF
   -DLLAMA_BUILD_EXAMPLES=OFF

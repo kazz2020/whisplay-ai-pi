@@ -58,6 +58,8 @@ If you only want to build the local LLM runtime:
 bash scripts/install_llama_cpp.sh
 ```
 
+This build enables HTTPS support for Hugging Face downloads. If `llama-server` says HTTPS is not supported, rebuild it with this script and then retry.
+
 To run the local server using your `.env` settings:
 
 ```bash
