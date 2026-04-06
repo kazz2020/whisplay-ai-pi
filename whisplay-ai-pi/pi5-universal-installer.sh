@@ -233,16 +233,18 @@ pick_asr_model() {
 
 pick_tts_voice() {
   echo "Select the Piper voice:"
-  echo "  1. en_US-lessac-medium (recommended)"
-  echo "  2. en_US-amy-medium"
-  echo "  3. custom voice id"
+  echo "  1. English: en_US-lessac-medium (recommended)"
+  echo "  2. Polish: pl_PL-gosia-medium"
+  echo "  3. German: de_DE-thorsten-medium"
+  echo "  4. custom voice id"
   local choice
   read -r -p "Choice [1] " choice
   choice="${choice:-1}"
   case "${choice}" in
     1) PIPER_VOICE="en_US-lessac-medium" ;;
-    2) PIPER_VOICE="en_US-amy-medium" ;;
-    3) PIPER_VOICE=$(prompt_value "Enter Piper voice id" "en_US-lessac-medium") ;;
+    2) PIPER_VOICE="pl_PL-gosia-medium" ;;
+    3) PIPER_VOICE="de_DE-thorsten-medium" ;;
+    4) PIPER_VOICE=$(prompt_value "Enter Piper voice id" "en_US-lessac-medium") ;;
     *) die "Invalid Piper voice choice" ;;
   esac
 }
