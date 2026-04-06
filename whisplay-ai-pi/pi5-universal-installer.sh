@@ -197,12 +197,13 @@ download_faster_whisper_model() {
   fi
 
   log "Pre-downloading faster-whisper model: ${ASR_MODEL}"
-  ASR_MODEL_NAME="${ASR_MODEL}" python3 - <<'PY'
+  ASR_MODEL_NAME="${ASR_MODEL}" HF_TOKEN_VALUE="${LLAMA_CPP_HF_TOKEN_VALUE:-${HF_TOKEN:-}}" python3 - <<'PY'
 import os
 import subprocess
 import sys
 
 model_name = os.environ["ASR_MODEL_NAME"].strip()
+token = os.environ.get("HF_TOKEN_VALUE", "").strip() or None
 
 repo_map = {
     "tiny": "Systran/faster-whisper-tiny",
@@ -239,7 +240,14 @@ except Exception:
     from huggingface_hub import snapshot_download
 
 print(f"Downloading faster-whisper files from: {repo_id}", flush=True)
-local_path = snapshot_download(repo_id=repo_id, repo_type="model", resume_download=True)
+if token:
+  print("Using Hugging Face token for faster-whisper download", flush=True)
+local_path = snapshot_download(
+  repo_id=repo_id,
+  repo_type="model",
+  resume_download=True,
+  token=token,
+)
 print(f"faster-whisper model ready: {local_path}", flush=True)
 PY
 }
@@ -884,6 +892,7 @@ if [ "${LLM_SERVER_SELECTION}" = "llama.cpp" ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_HF_REPO" "${LLAMA_HF_REPO}"
   if [ -n "${LLAMA_CPP_HF_TOKEN_VALUE:-}" ]; then
     set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_HF_TOKEN" "${LLAMA_CPP_HF_TOKEN_VALUE}"
+    set_env_value "${CHATBOT_ENV_FILE}" "HF_TOKEN" "${LLAMA_CPP_HF_TOKEN_VALUE}"
   fi
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_MODEL" "${LLAMA_ALIAS}"
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_ALIAS" "${LLAMA_ALIAS}"
