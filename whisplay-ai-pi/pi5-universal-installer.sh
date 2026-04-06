@@ -207,11 +207,15 @@ download_llama_cpp_model() {
 
   log "Pre-downloading llama.cpp model via llama-server: ${LLAMA_HF_REPO}"
   local llama_host llama_port llama_pid ready=0
+  local last_progress_line=""
+  local loop_count=0
   local health_url log_file
   llama_host="127.0.0.1"
   llama_port="18080"
   health_url="http://${llama_host}:${llama_port}/health"
   log_file="/tmp/whisplay-llama-download.log"
+
+  : > "${log_file}"
 
   (
     LLAMA_CPP_SERVER_BIN="${server_bin}" \
@@ -231,10 +235,25 @@ download_llama_cpp_model() {
   llama_pid=$!
 
   for _ in $(seq 1 900); do
+    loop_count=$((loop_count + 1))
+
     if ! kill -0 "${llama_pid}" >/dev/null 2>&1; then
       warn "llama-server exited before becoming ready"
       tail -n 200 "${log_file}" >&2 || true
       return 1
+    fi
+
+    if [ -s "${log_file}" ]; then
+      local progress_line
+      progress_line=$(grep -Eai 'download|progress|gguf|transferred|bytes|%|eta|model|listening|loading|main:' "${log_file}" | tail -n 1 || true)
+      if [ -n "${progress_line}" ] && [ "${progress_line}" != "${last_progress_line}" ]; then
+        log "llama.cpp: ${progress_line}"
+        last_progress_line="${progress_line}"
+      elif [ $((loop_count % 10)) -eq 0 ]; then
+        log "llama.cpp warm-up still running. Current log: ${log_file}"
+      fi
+    elif [ $((loop_count % 10)) -eq 0 ]; then
+      log "Waiting for llama-server to start and begin downloading..."
     fi
 
     if curl -sf "${health_url}" >/dev/null 2>&1; then
