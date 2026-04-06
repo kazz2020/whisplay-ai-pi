@@ -9,7 +9,7 @@ Wraps the Hailo-10H VLM (Vision Language Model) as an OpenAI-compatible
 
 Prerequisites:
   sudo apt install hailo-all
-  pip install hailo-apps[gen-ai] opencv-python-headless --break-system-packages
+    pip install hailo-apps[gen-ai] "opencv-python-headless==4.10.0.84" --break-system-packages
   hailo-download-resources --group vlm_chat --arch hailo10h
 
 Usage:

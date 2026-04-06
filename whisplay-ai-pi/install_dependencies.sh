@@ -26,7 +26,8 @@ sudo raspi-config nonint do_spi 0
 # install python dependencies
 echo "Installing Python dependencies..."
 cd python
-pip install -r requirements.txt --break-system-packages
+python3 -m pip install --break-system-packages --force-reinstall "numpy<2" "opencv-python-headless==4.10.0.84"
+python3 -m pip install -r requirements.txt --break-system-packages
 # download fonts and emojis
 if command_exists wget; then
     if [ ! -f "NotoSansSC-Bold.ttf" ]; then

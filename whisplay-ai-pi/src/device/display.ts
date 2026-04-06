@@ -2,6 +2,7 @@ import { exec } from "child_process";
 import { resolve } from "path";
 import { Socket } from "net";
 import { getCurrentTimeTag } from "../utils";
+import { traceEvent } from "../utils/trace";
 import { WebDisplayServer } from "./web-display";
 import { webAudioBridge } from "./web-audio-bridge";
 import dotEnv from "dotenv";
@@ -76,6 +77,11 @@ export class WhisplayDisplay {
   constructor() {
     this.deviceEnabled = parseBoolEnv("WHISPLAY_DEVICE_ENABLED", true);
     this.cameraEnabled = parseBoolEnv("ENABLE_CAMERA", false);
+    traceEvent("display", "Initializing display bridge", {
+      deviceEnabled: this.deviceEnabled,
+      cameraEnabled: this.cameraEnabled,
+      webEnabled: parseBoolEnv("WHISPLAY_WEB_ENABLED", false),
+    });
     const webCameraEnabled = parseBoolEnv("WEB_CAMERA_ENABLED", false);
     if (this.cameraEnabled && !webCameraEnabled) {
       this.ensureCameraDaemon();
@@ -92,6 +98,7 @@ export class WhisplayDisplay {
         onTextInput: (text: string) => this.handleTextInputEvent(text),
       });
       this.webDisplay.updateStatus(this.currentStatus);
+      traceEvent("display", "Web display server enabled", { host, port });
     }
 
     if (this.deviceEnabled) {
@@ -121,6 +128,10 @@ export class WhisplayDisplay {
         this.buttonReleaseTimeArray.length >= 2;
 
       if (doubleClickDetected) {
+        traceEvent("button", "Double click detected", {
+          presses: this.buttonPressTimeArray.length,
+          releases: this.buttonReleaseTimeArray.length,
+        });
         this.buttonDoubleClickCallback?.();
       } else {
         const lastReleaseTime = this.buttonReleaseTimeArray.pop() || 0;
@@ -146,6 +157,7 @@ export class WhisplayDisplay {
       "../../python",
     )} && python3 chatbot-ui.py`;
     console.log("Starting Python process...");
+    traceEvent("display", "Starting Python UI process", { command });
     this.pythonProcess = exec(command, (error, stdout, stderr) => {
       if (error) {
         console.error("Error starting Python process:", error);
@@ -191,6 +203,11 @@ export class WhisplayDisplay {
           .catch((err) => {
             if (attempt < retries) {
               console.log(`Connection attempt ${attempt} failed, retrying...`);
+              traceEvent("display", "Socket connect retry scheduled", {
+                attempt,
+                retries,
+                error: err instanceof Error ? err.message : String(err),
+              });
               setTimeout(() => attemptConnection(attempt + 1), 5000);
             } else {
               console.error("Failed to connect after multiple attempts:", err);
@@ -205,6 +222,10 @@ export class WhisplayDisplay {
 
   async connect(): Promise<void> {
     console.log("Connecting to local display socket...");
+    traceEvent("display", "Connecting to Python UI socket", {
+      host: "0.0.0.0",
+      port: 12345,
+    });
     return new Promise<void>((resolve, reject) => {
       // 销毁原来的this.client
       if (this.client) {
@@ -213,6 +234,7 @@ export class WhisplayDisplay {
       this.client = new Socket();
       this.client.connect(12345, "0.0.0.0", () => {
         console.log("Connected to local display socket");
+        traceEvent("display", "Connected to Python UI socket");
         this.receiveBuffer = "";
         this.sendToDisplay(JSON.stringify(this.currentStatus));
         resolve();
@@ -230,6 +252,7 @@ export class WhisplayDisplay {
             `[${getCurrentTimeTag()}] Received data from Whisplay hat:`,
             line,
           );
+          traceEvent("display", "Received socket event from UI", { line });
           try {
             const json = JSON.parse(line);
             if (json.event === "button_pressed") {
@@ -250,6 +273,10 @@ export class WhisplayDisplay {
         }
       });
       this.client.on("error", (err: any) => {
+        traceEvent("display", "Display socket error", {
+          code: err?.code,
+          message: err?.message,
+        });
         // 如果是ECONNREFUSED
         if (err.code === "ECONNREFUSED") {
           reject(err);
@@ -290,6 +317,7 @@ export class WhisplayDisplay {
     }
     await this.isReady;
     try {
+      traceEvent("display", "Sending payload to UI", summarizeDisplayPayload(data));
       this.client?.write(`${data}\n`, "utf8", () => {
         // console.log("send", data);
       });
@@ -402,10 +430,23 @@ export class WhisplayDisplay {
     changedValuesObj.brightness = 100;
     const data = JSON.stringify(changedValuesObj);
     if (isTextChanged) console.log("send data:", data);
+    traceEvent("display", "Display state update", {
+      changedKeys: Object.keys(changedValuesObj),
+      cameraMode: camera_mode,
+      hasImage: Boolean(image),
+      textPreview:
+        typeof changedValuesObj.text === "string"
+          ? changedValuesObj.text.slice(0, 80)
+          : undefined,
+    });
 
     if (normalizedStatus.camera_capture) {
       const capturePath = normalizedStatus.capture_image_path || this.currentStatus.capture_image_path;
       if (capturePath) {
+        traceEvent("display", "Camera capture requested", {
+          capturePath,
+          deviceEnabled: this.deviceEnabled,
+        });
         const webCamEnabled = parseBoolEnv("WEB_CAMERA_ENABLED", false);
         if (webCamEnabled && webAudioBridge.isCameraAvailable()) {
           // Request capture from browser camera regardless of physical device state.
@@ -431,6 +472,10 @@ export class WhisplayDisplay {
   private handleButtonPressedEvent(): void {
     this.buttonDown = true;
     this.buttonPressTimeArray.push(Date.now());
+    traceEvent("button", "Pressed", {
+      buttonDown: this.buttonDown,
+      queuedPresses: this.buttonPressTimeArray.length,
+    });
     this.startMonitoringDoubleClick();
     if (!this.buttonDetectInterval) {
       console.log("emit pressed");
@@ -441,6 +486,10 @@ export class WhisplayDisplay {
   private handleButtonReleasedEvent(): void {
     this.buttonDown = false;
     this.buttonReleaseTimeArray.push(Date.now());
+    traceEvent("button", "Released", {
+      buttonDown: this.buttonDown,
+      queuedReleases: this.buttonReleaseTimeArray.length,
+    });
     if (!this.buttonDetectInterval) {
       console.log("emit released");
       this.buttonReleasedCallback();
@@ -452,10 +501,14 @@ export class WhisplayDisplay {
   }
 
   private handleCameraCaptureEvent(): void {
+    traceEvent("display", "Camera capture event received");
     this.onCameraCaptureCallback();
   }
 
   private handleTextInputEvent(text: string): void {
+    traceEvent("display", "Text input event received", {
+      textPreview: text.slice(0, 80),
+    });
     this.textInputCallback(text);
   }
 
@@ -476,9 +529,11 @@ export class WhisplayDisplay {
       }
       if (stdout?.trim()) {
         console.log(stdout.trim());
+        traceEvent("camera", "Camera daemon ensure output", { stdout: stdout.trim() });
       }
       if (stderr?.trim()) {
         console.warn(stderr.trim());
+        traceEvent("camera", "Camera daemon ensure warning", { stderr: stderr.trim() });
       }
     });
   }
@@ -488,6 +543,7 @@ export class WhisplayDisplay {
     payload: Record<string, unknown> = {},
   ): void {
     const port = parseInt(process.env.WHISPLAY_CAMERA_DAEMON_PORT || "18765", 10);
+    traceEvent("camera", "Sending camera daemon command", { cmd, payload, port });
     const socket = new Socket();
     socket.setTimeout(1000);
     socket.connect(port, "127.0.0.1", () => {
@@ -502,6 +558,24 @@ export class WhisplayDisplay {
     });
   }
 }
+
+const summarizeDisplayPayload = (payload: string): Record<string, unknown> => {
+  try {
+    const parsed = JSON.parse(payload) as Record<string, unknown>;
+    return {
+      keys: Object.keys(parsed),
+      status: parsed.status,
+      camera_mode: parsed.camera_mode,
+      camera_capture: parsed.camera_capture,
+      brightness: parsed.brightness,
+      hasImage: Boolean(parsed.image),
+      textPreview:
+        typeof parsed.text === "string" ? parsed.text.slice(0, 80) : undefined,
+    };
+  } catch {
+    return { rawPreview: payload.slice(0, 120) };
+  }
+};
 
 // Create a singleton instance to maintain backward compatibility
 const displayInstance = new WhisplayDisplay();

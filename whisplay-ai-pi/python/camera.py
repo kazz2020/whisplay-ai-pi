@@ -11,10 +11,13 @@ from PIL import Image
 
 from utils import ImageUtils
 
+PICAMERA_IMPORT_ERROR = None
+
 try:
     from picamera2 import Picamera2
-except ImportError:
+except Exception as exc:
     Picamera2 = None
+    PICAMERA_IMPORT_ERROR = exc
 
 
 def _default_web_frame_path() -> str:
@@ -48,6 +51,8 @@ class SharedCameraService:
 
     def _ensure_camera_ready(self) -> None:
         if Picamera2 is None:
+            if PICAMERA_IMPORT_ERROR is not None:
+                raise RuntimeError(f"Picamera2 is unavailable: {PICAMERA_IMPORT_ERROR}")
             raise RuntimeError("Picamera2 is unavailable")
         if self.picam2 is not None:
             return

@@ -65,6 +65,16 @@ You need to firstly install the audio drivers for the Whisplay HAT. Follow the i
    ```bash
    bash run_chatbot.sh
    ```
+   For live terminal debugging on the Pi, run:
+   ```bash
+   bash run_chatbot.sh --debug
+   ```
+   This keeps the launcher in the foreground and prefixes output from the main app and local helper services so you can see what is happening in real time.
+   For verbose button/audio/display tracing, run:
+   ```bash
+   bash run_chatbot.sh --trace
+   ```
+   This enables structured trace logs for button presses, display socket traffic, camera mode changes, and audio record/playback events.
 6. Optionally, set up the chatbot service to start on boot:
    ```bash
    bash startup.sh

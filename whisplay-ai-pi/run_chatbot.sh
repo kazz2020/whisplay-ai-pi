@@ -1,4 +1,67 @@
 #!/bin/bash
+
+debug_mode=false
+trace_mode=false
+
+print_usage() {
+  cat <<'EOF'
+Usage: bash run_chatbot.sh [--debug] [--help]
+
+  --debug   Run in foreground with labeled live output for troubleshooting.
+  --trace   Enable verbose button/audio/display event tracing in foreground.
+  --help    Show this help text.
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --debug)
+      debug_mode=true
+      ;;
+    --trace)
+      debug_mode=true
+      trace_mode=true
+      ;;
+    --help|-h)
+      print_usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      print_usage >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+
+prefix_output() {
+  local prefix="$1"
+  sed -u "s/^/[$prefix] /"
+}
+
+start_bg_command() {
+  local name="$1"
+  shift
+
+  if [ "$debug_mode" = true ]; then
+    "$@" > >(prefix_output "$name") 2> >(prefix_output "$name" >&2) &
+  else
+    "$@" &
+  fi
+}
+
+run_fg_command() {
+  local name="$1"
+  shift
+
+  if [ "$debug_mode" = true ]; then
+    "$@" > >(prefix_output "$name") 2> >(prefix_output "$name" >&2)
+  else
+    "$@"
+  fi
+}
+
 # Set working directory and environment
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 os_name=$(uname -s 2>/dev/null || echo "unknown")
@@ -14,6 +77,16 @@ esac
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+
+if [ "$debug_mode" = true ]; then
+  export WHISPLAY_DEBUG=true
+  export PYTHONUNBUFFERED=1
+  export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--trace-warnings"
+fi
+
+if [ "$trace_mode" = true ]; then
+  export WHISPLAY_TRACE_EVENTS=true
+fi
 
 # Find the sound card index for wm8960soundcard (Linux only)
 card_index=""
@@ -46,7 +119,15 @@ if command -v node >/dev/null 2>&1; then
 else
   echo "Node version: not found"
 fi
-sleep 5
+if [ "$debug_mode" = true ]; then
+  echo "Debug mode: enabled"
+  if [ "$trace_mode" = true ]; then
+    echo "Trace mode: enabled"
+  fi
+  echo "Tip: press Ctrl+C to stop all foreground output."
+else
+  sleep 5
+fi
 
 # Start the service
 echo "Starting Node.js application..."
@@ -114,12 +195,12 @@ fi
 if [ "$serve_ollama" = true ]; then
   echo "Starting Ollama server..."
   export OLLAMA_KEEP_ALIVE=-1 # ensure Ollama server stays alive
-  OLLAMA_HOST=0.0.0.0:11434 ollama serve &
+  start_bg_command "ollama" env OLLAMA_HOST=0.0.0.0:11434 ollama serve
 fi
 
 if [ "$serve_llama_cpp" = true ]; then
   echo "Starting llama.cpp server..."
-  "$script_dir/scripts/serve_llama_cpp.sh" &
+  start_bg_command "llama.cpp" "$script_dir/scripts/serve_llama_cpp.sh"
   llama_cpp_pid=$!
 fi
 
@@ -133,16 +214,16 @@ fi
 if [ "$use_npm" = true ]; then
   echo "Using npm to start the application..."
   if [ -n "$card_index" ]; then
-    SOUND_CARD_INDEX=$card_index npm start
+    run_fg_command "app" env SOUND_CARD_INDEX=$card_index npm start
   else
-    npm start
+    run_fg_command "app" npm start
   fi
 else
   echo "Using yarn to start the application..."
   if [ -n "$card_index" ]; then
-    SOUND_CARD_INDEX=$card_index yarn start
+    run_fg_command "app" env SOUND_CARD_INDEX=$card_index yarn start
   else
-    yarn start
+    run_fg_command "app" yarn start
   fi
 fi
 

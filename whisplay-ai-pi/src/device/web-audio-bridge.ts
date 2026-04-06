@@ -34,6 +34,7 @@ import path from "path";
 import { spawn } from "child_process";
 import { cameraFeedDir } from "../utils/dir";
 import type { TTSResult } from "../type";
+import { traceEvent } from "../utils/trace";
 
 export type AudioFormat = "wav" | "mp3";
 
@@ -82,6 +83,9 @@ class WebAudioBridge {
 
   setServer(srv: WebAudioBridgeServer | null): void {
     this.server = srv;
+    traceEvent("web-audio", "Server registration changed", {
+      registered: Boolean(srv),
+    });
   }
 
   // ── Feature flags ─────────────────────────────────────────────────────────
@@ -146,6 +150,10 @@ class WebAudioBridge {
         timer,
         stopRequested: false,
       };
+      traceEvent("web-audio", "Browser recording requested", {
+        outputPath,
+        durationSec,
+      });
       this.server.broadcastToWebClients(JSON.stringify({ type: "start_record" }));
     });
   }
@@ -178,6 +186,7 @@ class WebAudioBridge {
       timer: null,
       stopRequested: false,
     };
+    traceEvent("web-audio", "Manual browser recording requested", { outputPath });
     this.server.broadcastToWebClients(JSON.stringify({ type: "start_record" }));
 
     return { result, stop: () => this.stopRecording() };
@@ -186,6 +195,7 @@ class WebAudioBridge {
   /** Signal the browser to stop recording and wait for final data. */
   stopRecording(): void {
     if (!this.recording || this.recording.stopRequested) return;
+    traceEvent("web-audio", "Browser recording stop requested");
     this.recording.stopRequested = true;
     this.server?.broadcastToWebClients(JSON.stringify({ type: "stop_record" }));
     setTimeout(() => this.finishRecording(), 800);
@@ -278,11 +288,16 @@ class WebAudioBridge {
   handleAudioChunk(data: Buffer): void {
     if (this.recording) {
       this.recording.chunks.push(data);
+      traceEvent("web-audio", "Received browser audio chunk", {
+        bytes: data.length,
+        chunks: this.recording.chunks.length,
+      });
     }
   }
 
   /** Browser signals that MediaRecorder has stopped; assemble the file. */
   handleRecordComplete(): void {
+    traceEvent("web-audio", "Browser reported recording complete");
     if (this.recording?.stopRequested) {
       this.finishRecording();
     }
@@ -319,6 +334,12 @@ class WebAudioBridge {
       }, audioDuration + 5000);
 
       this.playback = { playId, resolve, reject, timer };
+      traceEvent("web-audio", "Sending audio to browser", {
+        playId,
+        audioDuration,
+        format,
+        hasFilePath: Boolean(filePath),
+      });
 
       let audioBase64: string;
       let audioFormat: string = format;
@@ -354,6 +375,7 @@ class WebAudioBridge {
 
   /** Stop browser playback immediately. */
   stopPlayback(): void {
+    traceEvent("web-audio", "Browser playback stop requested");
     this.server?.broadcastToWebClients(JSON.stringify({ type: "stop_audio" }));
     this.stopCurrentPlayback();
   }
@@ -368,6 +390,7 @@ class WebAudioBridge {
 
   /** Browser signals that playback has finished. */
   handlePlayComplete(playId?: number): void {
+    traceEvent("web-audio", "Browser playback completed", { playId });
     const pb = this.playback;
     if (!pb) return;
     // Ignore stale play_complete from a previous chunk.
@@ -385,6 +408,7 @@ class WebAudioBridge {
    */
   notifyCameraStreamState(active: boolean): void {
     if (!this.server) return;
+    traceEvent("web-audio", "Browser camera stream state changed", { active });
     this.server.broadcastToWebClients(
       JSON.stringify({
         type: active ? "start_camera_stream" : "stop_camera_stream",
@@ -417,6 +441,7 @@ class WebAudioBridge {
       }, 10000);
 
       this.capture = { targetPath, resolve, reject, timer };
+      traceEvent("web-audio", "Browser camera capture requested", { targetPath });
       this.server.broadcastToWebClients(JSON.stringify({ type: "capture_photo" }));
     });
   }
@@ -432,6 +457,10 @@ class WebAudioBridge {
       fs.mkdirSync(path.dirname(framePath), { recursive: true });
       fs.writeFileSync(tempPath, data);
       fs.renameSync(tempPath, framePath);
+      traceEvent("web-audio", "Received live browser camera frame", {
+        bytes: data.length,
+        framePath,
+      });
     } catch {}
   }
 
@@ -445,6 +474,10 @@ class WebAudioBridge {
     try {
       fs.mkdirSync(path.dirname(cap.targetPath), { recursive: true });
       fs.writeFileSync(cap.targetPath, data);
+      traceEvent("web-audio", "Received browser camera capture", {
+        bytes: data.length,
+        targetPath: cap.targetPath,
+      });
       cap.resolve(cap.targetPath);
     } catch (e) {
       cap.reject(e);

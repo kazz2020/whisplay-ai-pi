@@ -9,8 +9,15 @@ import signal
 
 # from whisplay import WhisplayBoard
 from whisplay import WhisplayBoard
-from camera import CameraThread
 from utils import ColorUtils, ImageUtils, TextUtils
+
+CAMERA_IMPORT_ERROR = None
+
+try:
+    from camera import CameraThread
+except Exception as exc:
+    CameraThread = None
+    CAMERA_IMPORT_ERROR = exc
 
 STATUS_ICON_DIR = os.path.join(os.path.dirname(__file__), "status-bar-icon")
 if STATUS_ICON_DIR not in sys.path:
@@ -23,6 +30,8 @@ from image_icon import ImageStatusIcon
 
 scroll_thread = None
 scroll_stop_event = threading.Event()
+
+TRACE_EVENTS = os.getenv("WHISPLAY_TRACE_EVENTS", "false").lower() == "true"
 
 status_font_size=20
 emoji_font_size=40
@@ -58,6 +67,39 @@ clients = {}
 status_icon_factories = []
 
 
+def trace_event(scope, message, details=None):
+    if not TRACE_EVENTS:
+        return
+    if details is None:
+        print(f"[Trace:{scope}] {message}")
+        return
+    try:
+        serialized = json.dumps(details, ensure_ascii=True, default=str)
+    except Exception:
+        serialized = str(details)
+    if len(serialized) > 600:
+        serialized = serialized[:597] + "..."
+    print(f"[Trace:{scope}] {message} {serialized}")
+
+
+def summarize_payload(content):
+    summary = {
+        "keys": sorted(list(content.keys())),
+        "status": content.get("status"),
+        "camera_mode": content.get("camera_mode"),
+        "camera_capture": content.get("camera_capture"),
+        "brightness": content.get("brightness"),
+        "has_image": bool(content.get("image")),
+    }
+    text = content.get("text")
+    if isinstance(text, str):
+        summary["text_preview"] = text[:80]
+    capture_path = content.get("capture_image_path")
+    if capture_path:
+        summary["capture_image_path"] = capture_path
+    return summary
+
+
 def register_status_icon_factory(factory, priority=100):
     status_icon_factories.append({"priority": priority, "factory": factory})
 
@@ -80,6 +122,7 @@ class RenderThread(threading.Thread):
         # Display logo on startup
         logo_path = os.path.join("img", "logo.png")
         if os.path.exists(logo_path):
+            trace_event("display", "Rendering startup logo", {"path": logo_path})
             logo_image = Image.open(logo_path).convert("RGBA")
             logo_image = logo_image.resize((whisplay.LCD_WIDTH, whisplay.LCD_HEIGHT), Image.LANCZOS)
             rgb565_data = ImageUtils.image_to_rgb565(logo_image, whisplay.LCD_WIDTH, whisplay.LCD_HEIGHT)
@@ -432,11 +475,19 @@ def update_display_data(status=None, emoji=None, text=None,
         current_music_progress = music_progress if music_progress >= 0 else None
     if music_duration_ms is not None:
         current_music_duration_ms = music_duration_ms if music_duration_ms > 0 else None
+    trace_event("display", "Applied display update", {
+        "status": current_status,
+        "camera_mode": camera_mode,
+        "has_image": bool(current_image_path),
+        "text_preview": (current_text or "")[:80],
+        "music_progress": current_music_progress,
+    })
 
 
 def send_to_all_clients(message):
     """Send message to all connected clients"""
     message_json = json.dumps(message).encode("utf-8") + b"\n"
+    trace_event("socket", "Broadcasting notification", message)
     for addr, client_socket in clients.items():
         try:
             client_socket.sendall(message_json)
@@ -452,6 +503,7 @@ def send_to_all_clients(message):
 def exit_camera_mode():
     global camera_mode, camera_thread
     print("[Camera] Exiting camera mode...")
+    trace_event("camera", "Exit camera mode requested")
     if camera_thread is not None:
         camera_thread.stop()
         camera_thread = None
@@ -462,18 +514,21 @@ def exit_camera_mode():
 def on_button_pressed():
     """Function executed when button is pressed"""
     print("[Server] Button pressed")
+    trace_event("button", "Pressed")
     notification = {"event": "button_pressed"}
     send_to_all_clients(notification)
 
 def on_button_release():
     """Function executed when button is released"""
     print("[Server] Button released")
+    trace_event("button", "Released")
     notification = {"event": "button_released"}
     send_to_all_clients(notification)
 
 def handle_client(client_socket, addr, whisplay):
     global camera_capture_image_path, camera_mode, camera_thread
     print(f"[Socket] Client {addr} connected")
+    trace_event("socket", "Client connected", {"addr": str(addr)})
     clients[addr] = client_socket
     try:
         buffer = ""
@@ -491,6 +546,7 @@ def handle_client(client_socket, addr, whisplay):
                 # print(f"[Socket - {addr}] Received data: {line}")
                 try:
                     content = json.loads(line)
+                    trace_event("socket", "Received payload", summarize_payload(content))
                     transaction_id = content.get("transaction_id", None)
                     status = content.get("status", None)
                     emoji = content.get("emoji", None)
@@ -515,6 +571,7 @@ def handle_client(client_socket, addr, whisplay):
 
                     if rgbled:
                         rgb255_tuple = ColorUtils.get_rgb255_from_any(rgbled)
+                        trace_event("display", "Applying RGB fade", {"rgbled": rgbled, "rgb255": rgb255_tuple})
                         whisplay.set_rgb_fade(*rgb255_tuple, duration_ms=500)
                     
                     if battery_color:
@@ -523,19 +580,26 @@ def handle_client(client_socket, addr, whisplay):
                         battery_tuple = None
                         
                     if brightness:
+                        trace_event("display", "Setting backlight", {"brightness": brightness})
                         whisplay.set_backlight(brightness)
                         
                     if capture_image_path is not None:
                         camera_capture_image_path = capture_image_path
+                        trace_event("camera", "Updated capture image path", {"path": camera_capture_image_path})
                     
                     if set_camera_mode is not None:
                         if set_camera_mode:
                             print("[Camera] Entering camera mode...")
-                            camera_mode = True
-                            camera_thread = CameraThread(whisplay, camera_capture_image_path)
-                            camera_thread.start()
+                            trace_event("camera", "Entering camera mode", {"capture_image_path": camera_capture_image_path})
+                            if CameraThread is None:
+                                print(f"[Camera] Camera mode unavailable: {CAMERA_IMPORT_ERROR}")
+                            else:
+                                camera_mode = True
+                                camera_thread = CameraThread(whisplay, camera_capture_image_path)
+                                camera_thread.start()
                         else:
                             print("[Camera] Exiting camera mode...")
+                            trace_event("camera", "Exiting camera mode")
                             if camera_thread is not None:
                                 camera_thread.stop()
                                 camera_thread = None
@@ -543,10 +607,13 @@ def handle_client(client_socket, addr, whisplay):
 
                     if trigger_camera_capture:
                         print("[Camera] Capturing image by command...")
+                        trace_event("camera", "Capture requested", {"path": camera_capture_image_path})
                         if camera_thread is not None:
                             camera_thread.capture()
                             notification = {"event": "camera_capture"}
                             send_to_all_clients(notification)
+                        elif CameraThread is None:
+                            print(f"[Camera] Capture unavailable: {CAMERA_IMPORT_ERROR}")
 
                     if (text is not None) or (status is not None) or (emoji is not None) or \
                        (battery_level is not None) or (battery_color is not None) or \
@@ -573,15 +640,19 @@ def handle_client(client_socket, addr, whisplay):
                             print(f"[Socket - {addr}] Response sending error: {e}")
                             
                 except json.JSONDecodeError:
+                    trace_event("socket", "Invalid JSON received", {"line_preview": line[:120]})
                     client_socket.send(b"ERROR: invalid JSON\n")
                 except Exception as e:
                     print(f"[Socket - {addr}] Data processing error: {e}")
+                    trace_event("socket", "Data processing error", {"error": str(e)})
                     client_socket.send(f"ERROR: {e}\n".encode("utf-8"))
 
     except Exception as e:
         print(f"[Socket - {addr}] Connection error: {e}")
+        trace_event("socket", "Connection error", {"addr": str(addr), "error": str(e)})
     finally:
         print(f"[Socket] Client {addr} disconnected")
+        trace_event("socket", "Client disconnected", {"addr": str(addr)})
         del clients[addr]
         client_socket.close()
 
@@ -595,6 +666,7 @@ def start_socket_server(render_thread, host='0.0.0.0', port=12345):
     server_socket.bind((host, port))
     server_socket.listen(5)  # Allow more connections
     print(f"[Socket] Listening on {host}:{port} ...")
+    trace_event("socket", "Listening", {"host": host, "port": port})
 
     try:
         while True:

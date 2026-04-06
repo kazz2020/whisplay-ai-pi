@@ -6,6 +6,7 @@ import { pluginRegistry } from "../plugin";
 import type { ASRPlugin, TTSPlugin, AudioFormat } from "../plugin";
 import { ASRServer, TTSResult, TTSServer } from "../type";
 import { webAudioBridge } from "./web-audio-bridge";
+import { traceEvent } from "../utils/trace";
 
 export { getDynamicVoiceDetectLevel } from "./voice-detect";
 
@@ -51,9 +52,14 @@ export const recordFileFormat: AudioFormat = normalizeAudioFormat(
 
 function startPlayerProcess() {
   if (useWavPlayer) {
+    traceEvent("audio", "Using one-shot WAV playback mode", { alsaOutputDevice });
     return null;
   } else {
     // use mpg123 for mp3 files
+    traceEvent("audio", "Starting persistent mpg123 player", {
+      alsaOutputDevice,
+      soundCardIndex,
+    });
     const proc = spawn("mpg123", [
       "-",
       "--scale",
@@ -80,6 +86,7 @@ let currentRecordingReject: (reason?: any) => void = noop;
 const killAllRecordingProcesses = (): void => {
   recordingProcessList.forEach((child) => {
     console.log("Killing recording process", child.pid);
+    traceEvent("audio", "Stopping recording process", { pid: child.pid });
     try {
       child.kill("SIGINT");
     } catch (e) { }
@@ -89,6 +96,7 @@ const killAllRecordingProcesses = (): void => {
 
 export const playWakeupChime = (): Promise<void> => {
   return new Promise((resolve) => {
+    traceEvent("audio", "Playing wakeup chime", { alsaOutputDevice });
     let finished = false;
     const done = () => {
       if (finished) {
@@ -153,6 +161,10 @@ const recordAudio = async (
   // Delegate to browser microphone when web audio is enabled and a client is connected.
   if (webAudioBridge.isAvailable()) {
     console.log(`[WebAudio] Starting browser recording, max ${duration} seconds...`);
+    traceEvent("audio", "Delegating timed recording to browser", {
+      outputPath,
+      duration,
+    });
     return webAudioBridge.startRecording(outputPath, duration);
   }
 
@@ -177,6 +189,13 @@ const recordAudio = async (
       `${voiceDetectLevel}%`,
     ];
     console.log(`Starting recording, maximum ${duration} seconds...`);
+    traceEvent("audio", "Starting timed recording", {
+      outputPath,
+      duration,
+      voiceDetectLevel,
+      format: recordFileFormat,
+      args,
+    });
     currentRecordingReject = reject;
     const recordingProcess = spawn("sox", args);
 
@@ -193,6 +212,10 @@ const recordAudio = async (
     });
 
     recordingProcess.on("exit", (code) => {
+      traceEvent("audio", "Timed recording exited", {
+        outputPath,
+        code,
+      });
       if (code && code !== 0) {
         killAllRecordingProcesses();
         reject(code);
@@ -219,11 +242,16 @@ const recordAudioManually = (
   // Delegate to browser microphone when web audio is enabled and a client is connected.
   if (webAudioBridge.isAvailable()) {
     console.log(`[WebAudio] Starting manual browser recording...`);
+    traceEvent("audio", "Delegating manual recording to browser", { outputPath });
     return webAudioBridge.startManualRecording(outputPath);
   }
 
   let stopFunc: () => void = noop;
   const result = new Promise<string>((resolve, reject) => {
+    traceEvent("audio", "Starting manual recording", {
+      outputPath,
+      format: recordFileFormat,
+    });
     currentRecordingReject = reject;
     const recordingProcess = spawn("sox", [
       "-t",
@@ -261,6 +289,10 @@ const recordAudioManually = (
 };
 
 const stopRecording = (): void => {
+  traceEvent("audio", "stopRecording invoked", {
+    activeProcesses: recordingProcessList.length,
+    webAudio: webAudioBridge.isAvailable(),
+  });
   // Also stop any in-progress web recording.
   webAudioBridge.stopRecording();
 
@@ -293,6 +325,13 @@ const playAudioData = (params: TTSResult): Promise<void> => {
   // Delegate to browser speaker when web audio is enabled and a client is connected.
   if (webAudioBridge.isAvailable()) {
     console.log("[WebAudio] Sending audio to browser for playback.");
+    traceEvent("audio", "Delegating playback to browser", {
+      duration: params.duration,
+      format: ttsAudioFormat,
+      hasFilePath: Boolean(params.filePath),
+      hasBase64: Boolean(params.base64),
+      hasBuffer: Boolean(params.buffer),
+    });
     return webAudioBridge.playAudioData(params, ttsAudioFormat);
   }
 
@@ -303,6 +342,11 @@ const playAudioData = (params: TTSResult): Promise<void> => {
   }
   // play wav file using aplay
   if (filePath) {
+    traceEvent("audio", "Starting file playback", {
+      filePath,
+      audioDuration,
+      alsaOutputDevice,
+    });
     return Promise.race([
       new Promise<void>((resolve) => {
         setTimeout(() => {
@@ -333,6 +377,12 @@ const playAudioData = (params: TTSResult): Promise<void> => {
   return new Promise((resolve, reject) => {
     const audioBuffer = base64 ? Buffer.from(base64, "base64") : buffer;
     console.log("Playback duration:", audioDuration);
+    traceEvent("audio", "Starting buffer playback", {
+      audioDuration,
+      format: ttsAudioFormat,
+      bytes: audioBuffer?.length,
+      alsaOutputDevice,
+    });
     player.isPlaying = true;
     setTimeout(() => {
       resolve();
@@ -392,6 +442,10 @@ const playAudioData = (params: TTSResult): Promise<void> => {
 };
 
 const stopPlaying = (): void => {
+  traceEvent("audio", "stopPlaying invoked", {
+    isPlaying: player.isPlaying,
+    hasProcess: Boolean(player.process),
+  });
   // Also stop any in-progress web playback.
   webAudioBridge.stopPlayback();
 
