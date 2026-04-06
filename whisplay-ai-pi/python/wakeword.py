@@ -169,10 +169,10 @@ def run_openwakeword() -> int:
 
     wake_words = parse_list(os.getenv("WAKE_WORDS", ""))
     model_paths = parse_list(os.getenv("WAKE_WORD_MODEL_PATHS", ""))
-    threshold = float(os.getenv("WAKE_WORD_THRESHOLD", "0.5"))
+    threshold = float(os.getenv("WAKE_WORD_THRESHOLD", "0.45"))
     cooldown_sec = float(os.getenv("WAKE_WORD_COOLDOWN_SEC", "1.5"))
-    vad_threshold = float(os.getenv("WAKE_WORD_VAD_THRESHOLD", "0.0"))
-    enable_speex = os.getenv("WAKE_WORD_ENABLE_SPEEX", "false").lower() == "true"
+    vad_threshold = float(os.getenv("WAKE_WORD_VAD_THRESHOLD", "0.2"))
+    enable_speex = os.getenv("WAKE_WORD_ENABLE_SPEEX", "true").lower() == "true"
 
     if not wake_words and not model_paths:
         wake_words = ["hey_jarvis"]
@@ -180,7 +180,9 @@ def run_openwakeword() -> int:
     if not model_paths:
         download_models(model_names=wake_words)
 
-    log(f"Engine=openwakeword models={model_paths or wake_words}")
+    log(
+        f"Engine=openwakeword models={model_paths or wake_words} threshold={threshold} vad={vad_threshold} speex={enable_speex}"
+    )
     model = Model(
         wakeword_models=model_paths or wake_words,
         enable_speex_noise_suppression=enable_speex,

@@ -10,11 +10,21 @@ LLAMA_REPO_URL="https://github.com/ggml-org/llama.cpp.git"
 DEFAULT_PIPER_DIR="${HOME}/piper"
 DRIVER_REBOOT_RECOMMENDED=false
 ASR_LANGUAGE="en"
-ASSISTANT_SYSTEM_PROMPT="You are a cheerful and helpful assistant. Reply in English unless the user clearly asks for another language. Keep answers concise and natural."
+ASSISTANT_SYSTEM_PROMPT="You are a local voice assistant running on a Raspberry Pi. Reply in English unless the user clearly asks for another language. Keep replies short, concrete, and accurate. If you are unsure, say so plainly instead of guessing."
+LLM_SERVER_SELECTION="llama.cpp"
+SERVE_LLAMA_CPP_VALUE="true"
+SERVE_OLLAMA_VALUE="false"
+OLLAMA_ENDPOINT_VALUE="http://192.168.1.100:11434"
+OLLAMA_MODEL_VALUE="gemma3:4b"
+OLLAMA_ENABLE_TOOLS_VALUE="false"
+OPENAI_API_BASE_URL_VALUE="https://api.deepseek.com/v1"
+OPENAI_API_KEY_VALUE=""
+OPENAI_LLM_MODEL_VALUE="deepseek-chat"
+OPENAI_ENABLE_TOOLS_VALUE="false"
 WAKE_WORD_ENGINE="disabled"
 WAKE_WORD_PHRASE=""
 WAKE_WORD_REFERENCE_DIR=""
-WAKE_WORD_THRESHOLD="0.12"
+WAKE_WORD_THRESHOLD="0.16"
 WAKE_WORD_BUFFER_SIZE="1.8"
 WAKE_WORD_SLIDE_SIZE="0.25"
 WAKE_WORD_SAMPLE_COUNT="4"
@@ -55,6 +65,19 @@ prompt_value() {
   local reply
   read -r -p "${prompt} [${default_value}] " reply
   printf '%s\n' "${reply:-$default_value}"
+}
+
+prompt_required_value() {
+  local prompt="$1"
+  local reply
+  while true; do
+    read -r -p "${prompt} " reply
+    if [ -n "${reply}" ]; then
+      printf '%s\n' "${reply}"
+      return 0
+    fi
+    warn "A value is required for this option."
+  done
 }
 
 slugify() {
@@ -233,6 +256,7 @@ download_llama_cpp_model() {
   local last_progress_line=""
   local loop_count=0
   local saw_main_loop=0
+  local saw_download_progress=0
   local health_url models_url log_file
   llama_host="127.0.0.1"
   llama_port="18080"
@@ -289,6 +313,9 @@ PY
         log "llama.cpp: ${progress_line}"
         last_progress_line="${progress_line}"
         case "${progress_line}" in
+          *"%"*|*"download"*|*"transferred"*|*"bytes"*|*"eta"*)
+            saw_download_progress=1
+            ;;
           *"main: starting the main loop"*)
             saw_main_loop=1
             ;;
@@ -326,6 +353,10 @@ PY
     -H "Content-Type: application/json" \
     -d "{\"model\":\"${LLAMA_ALIAS}\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":false,\"max_tokens\":1}" \
     >/tmp/whisplay-llama-download-request.json
+
+  if [ "${saw_download_progress}" -ne 1 ]; then
+    log "llama.cpp did not emit visible download percentages. This usually means the model was already cached or llama.cpp downloaded it without line-by-line progress output."
+  fi
 
   kill "${llama_pid}" >/dev/null 2>&1 || true
   wait "${llama_pid}" 2>/dev/null || true
@@ -392,6 +423,56 @@ pick_llm_repo() {
   esac
 }
 
+pick_llm_runtime_mode() {
+  echo "Select the LLM runtime mode:"
+  echo "  1. Local llama.cpp on the Raspberry Pi (offline)"
+  echo "  2. Ollama on another computer in your LAN (free, no API key)"
+  echo "  3. DeepSeek API via OpenAI-compatible endpoint (online)"
+  local choice
+  read -r -p "Choice [1] " choice
+  choice="${choice:-1}"
+
+  case "${choice}" in
+    1)
+      LLM_SERVER_SELECTION="llama.cpp"
+      SERVE_LLAMA_CPP_VALUE="true"
+      SERVE_OLLAMA_VALUE="false"
+      ;;
+    2)
+      LLM_SERVER_SELECTION="ollama"
+      SERVE_LLAMA_CPP_VALUE="false"
+      SERVE_OLLAMA_VALUE="false"
+      OLLAMA_ENDPOINT_VALUE=$(prompt_value "Enter Ollama endpoint on your LAN" "http://192.168.1.100:11434")
+      OLLAMA_MODEL_VALUE=$(prompt_value "Enter Ollama model name" "gemma3:4b")
+      OLLAMA_ENABLE_TOOLS_VALUE="false"
+      BRAIN_PROFILE_NAME="lan-ollama"
+      BRAIN_PROFILE_LABEL="LAN Ollama"
+      if prompt_yes_no "Skip local llama.cpp install and model pre-download for this Ollama setup" "y"; then
+        INSTALL_LLAMA_CPP=false
+        DOWNLOAD_LLM_MODEL=false
+      fi
+      ;;
+    3)
+      LLM_SERVER_SELECTION="openai"
+      SERVE_LLAMA_CPP_VALUE="false"
+      SERVE_OLLAMA_VALUE="false"
+      OPENAI_API_BASE_URL_VALUE=$(prompt_value "Enter OpenAI-compatible API base URL" "https://api.deepseek.com/v1")
+      OPENAI_API_KEY_VALUE=$(prompt_required_value "Enter DeepSeek/OpenAI-compatible API key")
+      OPENAI_LLM_MODEL_VALUE=$(prompt_value "Enter online model name" "deepseek-chat")
+      OPENAI_ENABLE_TOOLS_VALUE="false"
+      BRAIN_PROFILE_NAME="deepseek-api"
+      BRAIN_PROFILE_LABEL="DeepSeek API"
+      if prompt_yes_no "Skip local llama.cpp install and model pre-download for this online setup" "y"; then
+        INSTALL_LLAMA_CPP=false
+        DOWNLOAD_LLM_MODEL=false
+      fi
+      ;;
+    *)
+      die "Invalid LLM runtime choice"
+      ;;
+  esac
+}
+
 pick_asr_model() {
   echo "Select the faster-whisper ASR model:"
   echo "  1. tiny (fastest, recommended)"
@@ -421,63 +502,88 @@ pick_tts_voice() {
     1)
       PIPER_VOICE="en_US-lessac-medium"
       ASR_LANGUAGE="en"
-      ASSISTANT_SYSTEM_PROMPT="You are a cheerful and helpful assistant. Reply in English unless the user clearly asks for another language. Keep answers concise and natural."
+      ASSISTANT_SYSTEM_PROMPT="You are a local voice assistant running on a Raspberry Pi. Reply in English unless the user clearly asks for another language. Keep replies short, concrete, and accurate. If you are unsure, say so plainly instead of guessing."
       ;;
     2)
       PIPER_VOICE="pl_PL-gosia-medium"
       ASR_LANGUAGE="pl"
-      ASSISTANT_SYSTEM_PROMPT="You are a cheerful and helpful assistant. Always reply in Polish unless the user clearly asks for another language. Keep answers concise and natural."
+      ASSISTANT_SYSTEM_PROMPT="You are a local voice assistant running on a Raspberry Pi. Always reply in Polish unless the user clearly asks for another language. Keep replies short, concrete, and accurate. If you are unsure, say so plainly instead of guessing."
       ;;
     3)
       PIPER_VOICE="de_DE-thorsten-medium"
       ASR_LANGUAGE="de"
-      ASSISTANT_SYSTEM_PROMPT="You are a cheerful and helpful assistant. Always reply in German unless the user clearly asks for another language. Keep answers concise and natural."
+      ASSISTANT_SYSTEM_PROMPT="You are a local voice assistant running on a Raspberry Pi. Always reply in German unless the user clearly asks for another language. Keep replies short, concrete, and accurate. If you are unsure, say so plainly instead of guessing."
       ;;
     4)
       PIPER_VOICE=$(prompt_value "Enter Piper voice id" "en_US-lessac-medium")
       ASR_LANGUAGE=$(prompt_value "Enter faster-whisper language code (en/pl/de or empty for auto)" "en")
-      ASSISTANT_SYSTEM_PROMPT=$(prompt_value "Enter assistant language instruction" "You are a cheerful and helpful assistant. Reply in English unless the user clearly asks for another language. Keep answers concise and natural.")
+      ASSISTANT_SYSTEM_PROMPT=$(prompt_value "Enter assistant language instruction" "You are a local voice assistant running on a Raspberry Pi. Reply in English unless the user clearly asks for another language. Keep replies short, concrete, and accurate. If you are unsure, say so plainly instead of guessing.")
       ;;
     *) die "Invalid Piper voice choice" ;;
   esac
 }
 
+pick_polish_quality_mode() {
+  if [ "${ASR_LANGUAGE}" != "pl" ] || [ "${LLM_SERVER_SELECTION}" != "llama.cpp" ]; then
+    return 0
+  fi
+
+  echo "Select the free Polish quality mode:"
+  echo "  1. Pi-only stronger local mode (recommended): small faster-whisper + Gemma 2 2B"
+  echo "  2. Better free quality via Ollama on another computer in your LAN"
+  echo "  3. Keep my manual brain / ASR choices"
+  local choice
+  read -r -p "Choice [1] " choice
+  choice="${choice:-1}"
+
+  case "${choice}" in
+    1)
+      ASR_MODEL="small"
+      BRAIN_PROFILE_NAME="quality"
+      BRAIN_PROFILE_LABEL="Higher quality"
+      LLAMA_HF_REPO="bartowski/gemma-2-2b-it-GGUF:Q4_K_M"
+      LLAMA_ALIAS="gemma-2-2b-it"
+      BRAIN_THREADS_DEFAULT="4"
+      BRAIN_CONTEXT_DEFAULT="2048"
+      BRAIN_BATCH_DEFAULT="192"
+      BRAIN_UBATCH_DEFAULT="96"
+      BRAIN_MAX_MESSAGES_DEFAULT="8"
+      LLM_SERVER_SELECTION="llama.cpp"
+      SERVE_LLAMA_CPP_VALUE="true"
+      SERVE_OLLAMA_VALUE="false"
+      ;;
+    2)
+      ASR_MODEL="small"
+      LLM_SERVER_SELECTION="ollama"
+      SERVE_LLAMA_CPP_VALUE="false"
+      SERVE_OLLAMA_VALUE="false"
+      OLLAMA_ENDPOINT_VALUE=$(prompt_value "Enter Ollama endpoint on your LAN" "http://192.168.1.100:11434")
+      OLLAMA_MODEL_VALUE=$(prompt_value "Enter Ollama model name" "gemma3:4b")
+      OLLAMA_ENABLE_TOOLS_VALUE="false"
+      BRAIN_PROFILE_NAME="lan-ollama"
+      BRAIN_PROFILE_LABEL="LAN Ollama"
+      if prompt_yes_no "Skip local llama.cpp install and model pre-download for this LAN Ollama setup" "y"; then
+        INSTALL_LLAMA_CPP=false
+        DOWNLOAD_LLM_MODEL=false
+      fi
+      ;;
+    3)
+      ;;
+    *)
+      die "Invalid Polish quality mode choice"
+      ;;
+  esac
+}
+
 pick_wake_word_config() {
   echo "Select wake word engine:"
-  echo "  1. local-wake (recommended, custom phrase from your own recordings)"
-  echo "  2. openWakeWord (English preset model)"
+  echo "  1. openWakeWord (recommended for a ready-made English wake word like hey_jarvis)"
+  echo "  2. local-wake (custom phrase from your own recordings)"
   local choice
   read -r -p "Choice [1] " choice
   choice="${choice:-1}"
   case "${choice}" in
     1)
-      WAKE_WORD_ENGINE="local-wake"
-      echo "Select the wake phrase label:"
-      echo "  1. hey whisplay"
-      echo "  2. hello assistant"
-      echo "  3. computer"
-      echo "  4. custom phrase"
-      local phrase_choice
-      read -r -p "Choice [1] " phrase_choice
-      phrase_choice="${phrase_choice:-1}"
-      case "${phrase_choice}" in
-        1) WAKE_WORD_PHRASE="hey whisplay" ;;
-        2) WAKE_WORD_PHRASE="hello assistant" ;;
-        3) WAKE_WORD_PHRASE="computer" ;;
-        4) WAKE_WORD_PHRASE=$(prompt_value "Enter custom wake phrase" "hey whisplay") ;;
-        *) die "Invalid wake phrase choice" ;;
-      esac
-      WAKE_WORD_THRESHOLD=$(prompt_value "local-wake distance threshold (lower is stricter)" "0.12")
-      WAKE_WORD_BUFFER_SIZE=$(prompt_value "local-wake buffer size (seconds)" "1.8")
-      WAKE_WORD_SLIDE_SIZE=$(prompt_value "local-wake slide size (seconds)" "0.25")
-      WAKE_WORD_SAMPLE_COUNT=$(prompt_value "Number of reference recordings" "4")
-      WAKE_WORD_SAMPLE_DURATION=$(prompt_value "Duration of each reference recording (seconds, whole numbers work best)" "3")
-      WAKE_WORD_REFERENCE_DIR="${PROJECT_ROOT}/data/wakewords/$(slugify "${WAKE_WORD_PHRASE}")"
-      if prompt_yes_no "Record wake word samples during install" "y"; then
-        RECORD_WAKE_WORD_SAMPLES=true
-      fi
-      ;;
-    2)
       WAKE_WORD_ENGINE="openwakeword"
       echo "Select the English preset wake word:"
       echo "  1. hey_jarvis"
@@ -494,7 +600,40 @@ pick_wake_word_config() {
         4) WAKE_WORD_OPENWAKEWORD_MODEL="alexa" ;;
         *) die "Invalid openWakeWord choice" ;;
       esac
-      WAKE_WORD_THRESHOLD=$(prompt_value "openWakeWord confidence threshold" "0.5")
+      WAKE_WORD_THRESHOLD=$(prompt_value "openWakeWord confidence threshold" "0.45")
+      WAKE_WORD_VAD_THRESHOLD=$(prompt_value "openWakeWord VAD threshold" "0.2")
+      if prompt_yes_no "Enable Speex noise suppression for openWakeWord" "y"; then
+        WAKE_WORD_ENABLE_SPEEX="true"
+      else
+        WAKE_WORD_ENABLE_SPEEX="false"
+      fi
+      ;;
+    2)
+      WAKE_WORD_ENGINE="local-wake"
+      echo "Select the wake phrase label:"
+      echo "  1. hey whisplay"
+      echo "  2. hello assistant"
+      echo "  3. computer"
+      echo "  4. custom phrase"
+      local phrase_choice
+      read -r -p "Choice [1] " phrase_choice
+      phrase_choice="${phrase_choice:-1}"
+      case "${phrase_choice}" in
+        1) WAKE_WORD_PHRASE="hey whisplay" ;;
+        2) WAKE_WORD_PHRASE="hello assistant" ;;
+        3) WAKE_WORD_PHRASE="computer" ;;
+        4) WAKE_WORD_PHRASE=$(prompt_value "Enter custom wake phrase" "hey whisplay") ;;
+        *) die "Invalid wake phrase choice" ;;
+      esac
+      WAKE_WORD_THRESHOLD=$(prompt_value "local-wake distance threshold (lower is stricter)" "0.16")
+      WAKE_WORD_BUFFER_SIZE=$(prompt_value "local-wake buffer size (seconds)" "1.8")
+      WAKE_WORD_SLIDE_SIZE=$(prompt_value "local-wake slide size (seconds)" "0.25")
+      WAKE_WORD_SAMPLE_COUNT=$(prompt_value "Number of reference recordings" "4")
+      WAKE_WORD_SAMPLE_DURATION=$(prompt_value "Duration of each reference recording (seconds, whole numbers work best)" "3")
+      WAKE_WORD_REFERENCE_DIR="${PROJECT_ROOT}/data/wakewords/$(slugify "${WAKE_WORD_PHRASE}")"
+      if prompt_yes_no "Record wake word samples during install" "y"; then
+        RECORD_WAKE_WORD_SAMPLES=true
+      fi
       ;;
     *)
       die "Invalid wake word engine choice"
@@ -542,26 +681,43 @@ if [ "${INSTALL_LOCAL_ASR}" = true ]; then
   if prompt_yes_no "Pre-download faster-whisper model during install" "y"; then DOWNLOAD_ASR_MODEL=true; fi
 fi
 
-pick_llm_repo
 pick_asr_model
 pick_tts_voice
+pick_llm_runtime_mode
+if [ "${LLM_SERVER_SELECTION}" = "llama.cpp" ]; then
+  pick_llm_repo
+fi
+pick_polish_quality_mode
 if [ "${INSTALL_WAKE_WORD}" = true ]; then
   pick_wake_word_config
 fi
 
 log "Selected brain profile: ${BRAIN_PROFILE_LABEL}"
-log "Brain model: ${LLAMA_HF_REPO}"
+if [ "${LLM_SERVER_SELECTION}" = "ollama" ]; then
+  log "LLM mode: Ollama on LAN (${OLLAMA_ENDPOINT_VALUE}, model ${OLLAMA_MODEL_VALUE})"
+elif [ "${LLM_SERVER_SELECTION}" = "openai" ]; then
+  log "LLM mode: online OpenAI-compatible endpoint (${OPENAI_API_BASE_URL_VALUE}, model ${OPENAI_LLM_MODEL_VALUE})"
+else
+  log "Brain model: ${LLAMA_HF_REPO}"
+fi
 
 CHATBOT_ENV_TEMPLATE="${PROJECT_ROOT}/.env.pi5-local.template"
 CHATBOT_ENV_FILE="${PROJECT_ROOT}/.env"
 DRIVER_DIR=$(prompt_value "Whisplay driver repo directory" "${PREFERRED_DRIVER_DIR}")
 LLAMA_DIR=$(prompt_value "llama.cpp repo directory" "${PREFERRED_LLAMA_DIR}")
 PIPER_DIR=$(prompt_value "Piper model directory" "${DEFAULT_PIPER_DIR}")
-CHATBOT_THREADS=$(prompt_value "llama.cpp CPU threads" "${BRAIN_THREADS_DEFAULT}")
-CHATBOT_CONTEXT=$(prompt_value "llama.cpp context size" "${BRAIN_CONTEXT_DEFAULT}")
-CHATBOT_BATCH=$(prompt_value "llama.cpp batch size" "${BRAIN_BATCH_DEFAULT}")
-CHATBOT_UBATCH=$(prompt_value "llama.cpp ubatch size" "${BRAIN_UBATCH_DEFAULT}")
-CHATBOT_MAX_MESSAGES=$(prompt_value "chat history message limit" "${BRAIN_MAX_MESSAGES_DEFAULT}")
+CHATBOT_THREADS="${BRAIN_THREADS_DEFAULT:-4}"
+CHATBOT_CONTEXT="${BRAIN_CONTEXT_DEFAULT:-2048}"
+CHATBOT_BATCH="${BRAIN_BATCH_DEFAULT:-256}"
+CHATBOT_UBATCH="${BRAIN_UBATCH_DEFAULT:-128}"
+CHATBOT_MAX_MESSAGES="${BRAIN_MAX_MESSAGES_DEFAULT:-12}"
+if [ "${LLM_SERVER_SELECTION}" = "llama.cpp" ]; then
+  CHATBOT_THREADS=$(prompt_value "llama.cpp CPU threads" "${CHATBOT_THREADS}")
+  CHATBOT_CONTEXT=$(prompt_value "llama.cpp context size" "${CHATBOT_CONTEXT}")
+  CHATBOT_BATCH=$(prompt_value "llama.cpp batch size" "${CHATBOT_BATCH}")
+  CHATBOT_UBATCH=$(prompt_value "llama.cpp ubatch size" "${CHATBOT_UBATCH}")
+fi
+CHATBOT_MAX_MESSAGES=$(prompt_value "chat history message limit" "${CHATBOT_MAX_MESSAGES}")
 
 if [ ! -f "${CHATBOT_ENV_TEMPLATE}" ]; then
   die "Missing ${CHATBOT_ENV_TEMPLATE}"
@@ -574,18 +730,37 @@ if [ -f "${CHATBOT_ENV_FILE}" ]; then
 fi
 
 cp "${CHATBOT_ENV_TEMPLATE}" "${CHATBOT_ENV_FILE}"
-set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_HF_REPO" "${LLAMA_HF_REPO}"
-set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_MODEL" "${LLAMA_ALIAS}"
-set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_ALIAS" "${LLAMA_ALIAS}"
-set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_THREADS" "${CHATBOT_THREADS}"
-set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_CONTEXT_SIZE" "${CHATBOT_CONTEXT}"
-set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_BATCH_SIZE" "${CHATBOT_BATCH}"
-set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_UBATCH_SIZE" "${CHATBOT_UBATCH}"
+set_env_value "${CHATBOT_ENV_FILE}" "ASR_SERVER" "faster-whisper"
+set_env_value "${CHATBOT_ENV_FILE}" "LLM_SERVER" "${LLM_SERVER_SELECTION}"
+set_env_value "${CHATBOT_ENV_FILE}" "TTS_SERVER" "piper-http"
+set_env_value "${CHATBOT_ENV_FILE}" "SERVE_LLAMA_CPP" "${SERVE_LLAMA_CPP_VALUE}"
+set_env_value "${CHATBOT_ENV_FILE}" "SERVE_OLLAMA" "${SERVE_OLLAMA_VALUE}"
+if [ "${LLM_SERVER_SELECTION}" = "llama.cpp" ]; then
+  set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_HF_REPO" "${LLAMA_HF_REPO}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_MODEL" "${LLAMA_ALIAS}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_ALIAS" "${LLAMA_ALIAS}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_THREADS" "${CHATBOT_THREADS}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_CONTEXT_SIZE" "${CHATBOT_CONTEXT}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_BATCH_SIZE" "${CHATBOT_BATCH}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_UBATCH_SIZE" "${CHATBOT_UBATCH}"
+fi
 set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_MAX_MESSAGES_LENGTH" "${CHATBOT_MAX_MESSAGES}"
+set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_ENABLE_TOOLS" "false"
 set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_MODEL_SIZE_OR_PATH" "${ASR_MODEL}"
 set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_LANGUAGE" "${ASR_LANGUAGE}"
 set_env_value "${CHATBOT_ENV_FILE}" "PIPER_HTTP_MODEL" "${PIPER_DIR}/${PIPER_VOICE}"
 set_env_value "${CHATBOT_ENV_FILE}" "SYSTEM_PROMPT" "${ASSISTANT_SYSTEM_PROMPT}"
+if [ "${LLM_SERVER_SELECTION}" = "ollama" ]; then
+  set_env_value "${CHATBOT_ENV_FILE}" "OLLAMA_ENDPOINT" "${OLLAMA_ENDPOINT_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "OLLAMA_MODEL" "${OLLAMA_MODEL_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "OLLAMA_ENABLE_TOOLS" "${OLLAMA_ENABLE_TOOLS_VALUE}"
+elif [ "${LLM_SERVER_SELECTION}" = "openai" ]; then
+  set_env_value "${CHATBOT_ENV_FILE}" "OPENAI_API_BASE_URL" "${OPENAI_API_BASE_URL_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "OPENAI_API_KEY" "${OPENAI_API_KEY_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "OPENAI_LLM_MODEL" "${OPENAI_LLM_MODEL_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "OPENAI_ENABLE_TOOLS" "${OPENAI_ENABLE_TOOLS_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "OPENAI_MAX_MESSAGES_LENGTH" "${CHATBOT_MAX_MESSAGES}"
+fi
 if [ "${INSTALL_WAKE_WORD}" = true ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_ENABLED" "true"
   set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_ENGINE" "${WAKE_WORD_ENGINE}"
@@ -597,6 +772,8 @@ if [ "${INSTALL_WAKE_WORD}" = true ]; then
     set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_LOCAL_WAKE_SLIDE_SIZE" "${WAKE_WORD_SLIDE_SIZE}"
   else
     set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORDS" "${WAKE_WORD_OPENWAKEWORD_MODEL}"
+    set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_VAD_THRESHOLD" "${WAKE_WORD_VAD_THRESHOLD:-0.2}"
+    set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_ENABLE_SPEEX" "${WAKE_WORD_ENABLE_SPEEX:-true}"
   fi
 else
   set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_ENABLED" "false"
@@ -675,6 +852,13 @@ fi
 if [ "${INSTALL_WAKE_WORD}" = true ] && [ "${WAKE_WORD_ENGINE}" = "local-wake" ] && [ "${RECORD_WAKE_WORD_SAMPLES}" = true ]; then
   log "Recording local-wake reference samples for '${WAKE_WORD_PHRASE}'"
   record_local_wake_samples "${WAKE_WORD_REFERENCE_DIR}" "${WAKE_WORD_SAMPLE_COUNT}" "${WAKE_WORD_SAMPLE_DURATION}" "${WAKE_WORD_PHRASE}"
+fi
+
+if [ "${INSTALL_WAKE_WORD}" = true ] && [ "${WAKE_WORD_ENGINE}" = "local-wake" ]; then
+  if ! compgen -G "${WAKE_WORD_REFERENCE_DIR}/*.wav" >/dev/null 2>&1; then
+    warn "Wake word is enabled, but no local-wake samples were found in ${WAKE_WORD_REFERENCE_DIR}."
+    warn "Record samples with: bash scripts/setup_local_wakeword.sh 4 3"
+  fi
 fi
 
 log "Install complete"

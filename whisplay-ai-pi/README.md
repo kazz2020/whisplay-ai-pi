@@ -99,7 +99,7 @@ bash pi5-universal-installer.sh
 
 The installer lets you choose whether to install the HAT driver, chatbot dependencies, local ASR/TTS, llama.cpp, the chatbot build, and the startup service.
 
-The installer can also enable wake word detection. For Raspberry Pi use, the recommended engine is `local-wake`, which lets you choose your own wake phrase and record reference samples directly on the device. The older `openWakeWord` path remains available for English preset models like `hey_jarvis`.
+The installer can also enable wake word detection. If you want the most reliable ready-made English option, choose `openWakeWord` with a preset like `hey_jarvis`. If you want your own custom phrase, choose `local-wake` and record reference samples directly on the device.
 
 The recommended local preset is stored in `.env.pi5-local.template`. A Polish-focused preset is available in `.env.pi5-local-pl.template`. Detailed notes are in `docs/pi5-local-assistant.md`.
 

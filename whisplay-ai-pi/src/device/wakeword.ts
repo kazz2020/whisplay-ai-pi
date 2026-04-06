@@ -1,6 +1,7 @@
 import { EventEmitter } from "events";
 import { spawn, ChildProcess } from "child_process";
 import { resolve } from "path";
+import { existsSync, readdirSync } from "fs";
 import dotenv from "dotenv";
 import { traceEvent } from "../utils/trace";
 dotenv.config();
@@ -16,9 +17,32 @@ export class WakeWordListener extends EventEmitter {
     const enabled = (process.env.WAKE_WORD_ENABLED || "").toLowerCase();
     if (enabled !== "true") return;
 
+    const engine = (process.env.WAKE_WORD_ENGINE || "openwakeword").toLowerCase();
+    if (engine === "local-wake") {
+      const referenceDir = process.env.WAKE_WORD_REFERENCE_DIR || "";
+      if (!referenceDir || !existsSync(referenceDir)) {
+        console.error(
+          `[WakeWord] local-wake is enabled, but WAKE_WORD_REFERENCE_DIR is missing or does not exist: ${referenceDir || "<empty>"}`,
+        );
+        console.error("[WakeWord] Record samples with: bash scripts/setup_local_wakeword.sh 4 3");
+        return;
+      }
+
+      const wavFiles = readdirSync(referenceDir).filter((name) =>
+        name.toLowerCase().endsWith(".wav"),
+      );
+      if (wavFiles.length === 0) {
+        console.error(
+          `[WakeWord] local-wake is enabled, but no .wav samples were found in ${referenceDir}`,
+        );
+        console.error("[WakeWord] Record samples with: bash scripts/setup_local_wakeword.sh 4 3");
+        return;
+      }
+    }
+
     const scriptPath = resolve(__dirname, "../../python/wakeword.py");
     traceEvent("wakeword", "Starting wake word listener", {
-      engine: process.env.WAKE_WORD_ENGINE || "openwakeword",
+      engine,
       pythonBinary,
       scriptPath,
     });
@@ -54,6 +78,9 @@ export class WakeWordListener extends EventEmitter {
     this.process.on("close", (code) => {
       traceEvent("wakeword", "Wake word listener exited", { code });
       console.log(`[WakeWord] process exited with code ${code}`);
+      if (code && engine === "local-wake") {
+        console.error("[WakeWord] local-wake exited unexpectedly. Run `bash run_chatbot.sh --debug` to inspect microphone and threshold logs.");
+      }
       this.process = null;
     });
   }

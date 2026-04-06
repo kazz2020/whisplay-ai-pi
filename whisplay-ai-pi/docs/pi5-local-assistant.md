@@ -23,10 +23,16 @@ These defaults are encoded in `.env.pi5-local.template`.
 
 If you want a Polish-first local setup, start from `.env.pi5-local-pl.template`. That preset switches to:
 
-- `FASTER_WHISPER_MODEL_SIZE_OR_PATH=base`
+- `FASTER_WHISPER_MODEL_SIZE_OR_PATH=small`
 - `FASTER_WHISPER_LANGUAGE=pl`
+- `LLAMA_CPP_HF_REPO=bartowski/gemma-2-2b-it-GGUF:Q4_K_M`
 - `PIPER_HTTP_MODEL=/home/pi/piper/pl_PL-gosia-medium`
 - a Polish reply `SYSTEM_PROMPT`
+
+For a better free no-key Polish setup, the installer now offers:
+
+- `Pi-only stronger local mode`: local faster-whisper `small` plus local llama.cpp `Gemma 2 2B`
+- `LAN Ollama mode`: local faster-whisper on the Pi plus a stronger Ollama model running on another computer in your home network
 
 The installer now offers these Pi-oriented brain profiles:
 
@@ -36,6 +42,12 @@ The installer now offers these Pi-oriented brain profiles:
 - `Custom`: manual Hugging Face GGUF repo entry
 
 When you choose a brain profile, the installer also writes matching defaults for threads, context size, batch size, ubatch size, and chat history length into `.env`.
+
+The installer also now lets you choose the LLM runtime mode:
+
+- `Local llama.cpp on the Pi`: fully offline
+- `Ollama on another computer in your LAN`: free and no API key, but needs another machine
+- `DeepSeek API via OpenAI-compatible endpoint`: online mode for users who already have a DeepSeek key
 
 The voice selection also sets matching local-language defaults:
 
@@ -66,12 +78,15 @@ The installer can:
 
 ## Wake word options
 
-For Raspberry Pi, prefer `local-wake` if you want to choose your own phrase. It works by comparing live audio against a small set of reference recordings that you record on the Pi itself.
+For Raspberry Pi, choose based on what you want more:
+
+- `openWakeWord` if you want a ready-made English wake word that is more likely to work immediately. The recommended preset is `hey_jarvis`.
+- `local-wake` if you want to choose your own phrase. It works by comparing live audio against a small set of reference recordings that you record on the Pi itself.
 
 The installer now offers:
 
-- `local-wake`: recommended, supports custom phrases and non-English phrases, but works best for the speaker who recorded the samples
-- `openWakeWord`: fallback option with English preset models such as `hey_jarvis`
+- `openWakeWord`: recommended for an immediate English preset such as `hey_jarvis`
+- `local-wake`: recommended only when you specifically need a custom phrase or non-English phrase
 
 If you choose `local-wake`, the installer can immediately record 3 to 5 reference samples and will write matching settings such as:
 

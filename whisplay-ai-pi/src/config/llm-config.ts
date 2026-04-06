@@ -1,8 +1,9 @@
 require("dotenv").config();
 
 const baseSystemPrompt =
+  process.env.ASSISTANT_SYSTEM_PROMPT ||
   process.env.SYSTEM_PROMPT ||
-  "You are a young and cheerful girl who loves to talk, chat, help others, and learn new things. You enjoy using emoji expressions. Never answer longer than 200 words. Always keep your answers concise and to the point.";
+  "You are a local voice assistant running on a Raspberry Pi. Give direct, useful answers. Keep replies short, concrete, and accurate. If you are unsure, say so plainly instead of guessing. Do not roleplay or add emojis unless the user asks for that style.";
 
 const wakeWordEnabled =
   (process.env.WAKE_WORD_ENABLED || "").toLowerCase() === "true";
