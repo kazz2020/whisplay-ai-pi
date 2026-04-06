@@ -197,12 +197,50 @@ download_faster_whisper_model() {
   fi
 
   log "Pre-downloading faster-whisper model: ${ASR_MODEL}"
-  python3 - <<PY
-from faster_whisper import WhisperModel
+  ASR_MODEL_NAME="${ASR_MODEL}" python3 - <<'PY'
+import os
+import subprocess
+import sys
 
-model_name = ${ASR_MODEL@Q}
-WhisperModel(model_name, device="cpu", compute_type="int8", cpu_threads=3)
-print(f"faster-whisper model ready: {model_name}")
+model_name = os.environ["ASR_MODEL_NAME"].strip()
+
+repo_map = {
+    "tiny": "Systran/faster-whisper-tiny",
+    "tiny.en": "Systran/faster-whisper-tiny.en",
+    "base": "Systran/faster-whisper-base",
+    "base.en": "Systran/faster-whisper-base.en",
+    "small": "Systran/faster-whisper-small",
+    "small.en": "Systran/faster-whisper-small.en",
+    "medium": "Systran/faster-whisper-medium",
+    "medium.en": "Systran/faster-whisper-medium.en",
+    "large-v1": "Systran/faster-whisper-large-v1",
+    "large-v2": "Systran/faster-whisper-large-v2",
+    "large-v3": "Systran/faster-whisper-large-v3",
+    "large": "Systran/faster-whisper-large-v3",
+    "distil-small.en": "Systran/faster-distil-whisper-small.en",
+    "distil-medium.en": "Systran/faster-distil-whisper-medium.en",
+    "distil-large-v2": "Systran/faster-distil-whisper-large-v2",
+    "distil-large-v3": "Systran/faster-distil-whisper-large-v3",
+}
+
+repo_id = repo_map.get(model_name, model_name)
+
+try:
+    from huggingface_hub import snapshot_download
+except Exception:
+    subprocess.check_call([
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--break-system-packages",
+        "huggingface_hub>=0.30.0",
+    ])
+    from huggingface_hub import snapshot_download
+
+print(f"Downloading faster-whisper files from: {repo_id}", flush=True)
+local_path = snapshot_download(repo_id=repo_id, repo_type="model", resume_download=True)
+print(f"faster-whisper model ready: {local_path}", flush=True)
 PY
 }
 
