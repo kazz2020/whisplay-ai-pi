@@ -227,7 +227,7 @@ repo_map = {
 repo_id = repo_map.get(model_name, model_name)
 
 try:
-  from huggingface_hub import hf_hub_download, list_repo_files
+    from huggingface_hub import hf_hub_download, list_repo_files
 except Exception:
     subprocess.check_call([
         sys.executable,
@@ -237,18 +237,18 @@ except Exception:
         "--break-system-packages",
         "huggingface_hub>=0.30.0",
     ])
-  from huggingface_hub import hf_hub_download, list_repo_files
+    from huggingface_hub import hf_hub_download, list_repo_files
 
 print(f"Downloading faster-whisper files from: {repo_id}", flush=True)
 if token:
-  print("Using Hugging Face token for faster-whisper download", flush=True)
+    print("Using Hugging Face token for faster-whisper download", flush=True)
 
 all_files = list_repo_files(repo_id=repo_id, repo_type="model", token=token)
 skip_suffixes = (".md", ".txt")
 skip_names = {".gitattributes", "README.md"}
 files = [
-  name for name in all_files
-  if name not in skip_names and not name.lower().endswith(skip_suffixes)
+    name for name in all_files
+    if name not in skip_names and not name.lower().endswith(skip_suffixes)
 ]
 
 if not files:
