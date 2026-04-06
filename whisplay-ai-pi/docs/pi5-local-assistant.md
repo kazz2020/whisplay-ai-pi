@@ -30,6 +30,12 @@ The installer now offers these Pi-oriented brain profiles:
 
 When you choose a brain profile, the installer also writes matching defaults for threads, context size, batch size, ubatch size, and chat history length into `.env`.
 
+The voice selection also sets matching local-language defaults:
+
+- English voice -> `FASTER_WHISPER_LANGUAGE=en` and English reply prompt
+- Polish voice -> `FASTER_WHISPER_LANGUAGE=pl` and Polish reply prompt
+- German voice -> `FASTER_WHISPER_LANGUAGE=de` and German reply prompt
+
 ## Fresh Pi OS install
 
 Run the interactive installer from the chatbot repository root:

@@ -9,6 +9,8 @@ DRIVER_REPO_URL="https://github.com/PiSugar/whisplay.git"
 LLAMA_REPO_URL="https://github.com/ggml-org/llama.cpp.git"
 DEFAULT_PIPER_DIR="${HOME}/piper"
 DRIVER_REBOOT_RECOMMENDED=false
+ASR_LANGUAGE="en"
+ASSISTANT_SYSTEM_PROMPT="You are a cheerful and helpful assistant. Reply in English unless the user clearly asks for another language. Keep answers concise and natural."
 
 log() {
   echo "[pi5-installer] $*"
@@ -298,10 +300,26 @@ pick_tts_voice() {
   read -r -p "Choice [1] " choice
   choice="${choice:-1}"
   case "${choice}" in
-    1) PIPER_VOICE="en_US-lessac-medium" ;;
-    2) PIPER_VOICE="pl_PL-gosia-medium" ;;
-    3) PIPER_VOICE="de_DE-thorsten-medium" ;;
-    4) PIPER_VOICE=$(prompt_value "Enter Piper voice id" "en_US-lessac-medium") ;;
+    1)
+      PIPER_VOICE="en_US-lessac-medium"
+      ASR_LANGUAGE="en"
+      ASSISTANT_SYSTEM_PROMPT="You are a cheerful and helpful assistant. Reply in English unless the user clearly asks for another language. Keep answers concise and natural."
+      ;;
+    2)
+      PIPER_VOICE="pl_PL-gosia-medium"
+      ASR_LANGUAGE="pl"
+      ASSISTANT_SYSTEM_PROMPT="You are a cheerful and helpful assistant. Always reply in Polish unless the user clearly asks for another language. Keep answers concise and natural."
+      ;;
+    3)
+      PIPER_VOICE="de_DE-thorsten-medium"
+      ASR_LANGUAGE="de"
+      ASSISTANT_SYSTEM_PROMPT="You are a cheerful and helpful assistant. Always reply in German unless the user clearly asks for another language. Keep answers concise and natural."
+      ;;
+    4)
+      PIPER_VOICE=$(prompt_value "Enter Piper voice id" "en_US-lessac-medium")
+      ASR_LANGUAGE=$(prompt_value "Enter faster-whisper language code (en/pl/de or empty for auto)" "en")
+      ASSISTANT_SYSTEM_PROMPT=$(prompt_value "Enter assistant language instruction" "You are a cheerful and helpful assistant. Reply in English unless the user clearly asks for another language. Keep answers concise and natural.")
+      ;;
     *) die "Invalid Piper voice choice" ;;
   esac
 }
@@ -382,7 +400,9 @@ set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_BATCH_SIZE" "${CHATBOT_BATCH}"
 set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_UBATCH_SIZE" "${CHATBOT_UBATCH}"
 set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_MAX_MESSAGES_LENGTH" "${CHATBOT_MAX_MESSAGES}"
 set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_MODEL_SIZE_OR_PATH" "${ASR_MODEL}"
+set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_LANGUAGE" "${ASR_LANGUAGE}"
 set_env_value "${CHATBOT_ENV_FILE}" "PIPER_HTTP_MODEL" "${PIPER_DIR}/${PIPER_VOICE}"
+set_env_value "${CHATBOT_ENV_FILE}" "SYSTEM_PROMPT" "${ASSISTANT_SYSTEM_PROMPT}"
 
 if [ "${INSTALL_DRIVER}" = true ]; then
   ensure_repo "${DRIVER_DIR}" "${DRIVER_REPO_URL}" "Whisplay driver"
