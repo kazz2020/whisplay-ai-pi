@@ -14,6 +14,10 @@ log() {
   echo "[pi5-installer] $*"
 }
 
+warn() {
+  echo "[pi5-installer] $*" >&2
+}
+
 die() {
   echo "[pi5-installer] $*" >&2
   exit 1
@@ -131,7 +135,10 @@ PY
 
 download_llama_cpp_model() {
   local server_bin
-  server_bin=$(find_llama_server_bin) || die "llama-server binary not found after install"
+  server_bin=$(find_llama_server_bin) || {
+    warn "llama-server binary not found after install; skipping llama.cpp model warm-up"
+    return 1
+  }
 
   if [ -n "${LLAMA_CPP_MODEL_PATH:-}" ] && [ -f "${LLAMA_CPP_MODEL_PATH}" ]; then
     log "Using existing local GGUF model: ${LLAMA_CPP_MODEL_PATH}"
@@ -146,8 +153,11 @@ download_llama_cpp_model() {
 
   log "Pre-downloading llama.cpp model via llama-server: ${LLAMA_HF_REPO}"
   local llama_host llama_port llama_pid ready=0
+  local health_url log_file
   llama_host="127.0.0.1"
   llama_port="18080"
+  health_url="http://${llama_host}:${llama_port}/health"
+  log_file="/tmp/whisplay-llama-download.log"
 
   (
     LLAMA_CPP_SERVER_BIN="${server_bin}" \
@@ -158,23 +168,35 @@ download_llama_cpp_model() {
     LLAMA_CPP_MODEL="${LLAMA_ALIAS}" \
     LLAMA_CPP_THREADS="${CHATBOT_THREADS}" \
     LLAMA_CPP_CONTEXT_SIZE="${CHATBOT_CONTEXT}" \
+    LLAMA_CPP_BATCH_SIZE="${CHATBOT_BATCH}" \
+    LLAMA_CPP_UBATCH_SIZE="${CHATBOT_UBATCH}" \
     LLAMA_CPP_ENABLE_TOOLS="false" \
     LLAMA_CPP_EXTRA_ARGS="--parallel 1" \
     bash "${PROJECT_ROOT}/scripts/serve_llama_cpp.sh"
-  ) >/tmp/whisplay-llama-download.log 2>&1 &
+  ) >"${log_file}" 2>&1 &
   llama_pid=$!
 
-  for _ in $(seq 1 120); do
-    if curl -sf "http://${llama_host}:${llama_port}/v1/models" >/dev/null 2>&1; then
+  for _ in $(seq 1 900); do
+    if ! kill -0 "${llama_pid}" >/dev/null 2>&1; then
+      warn "llama-server exited before becoming ready"
+      tail -n 200 "${log_file}" >&2 || true
+      return 1
+    fi
+
+    if curl -sf "${health_url}" >/dev/null 2>&1; then
       ready=1
       break
     fi
+
     sleep 2
   done
 
   if [ "${ready}" -ne 1 ]; then
     kill "${llama_pid}" >/dev/null 2>&1 || true
-    die "llama-server did not become ready. See /tmp/whisplay-llama-download.log"
+    wait "${llama_pid}" 2>/dev/null || true
+    warn "llama-server did not become ready in time"
+    tail -n 200 "${log_file}" >&2 || true
+    return 1
   fi
 
   curl -sf "http://${llama_host}:${llama_port}/v1/chat/completions" \
@@ -401,7 +423,10 @@ if [ "${INSTALL_LLAMA_CPP}" = true ]; then
 fi
 
 if [ "${DOWNLOAD_LLM_MODEL}" = true ]; then
-  download_llama_cpp_model
+  if ! download_llama_cpp_model; then
+    warn "Skipping llama.cpp pre-download. The assistant can still work; the first model start may just take longer."
+    warn "If needed later, start the chatbot once or run /usr/local/bin/llama-server -hf ${LLAMA_HF_REPO} manually on the Pi to populate the cache."
+  fi
 fi
 
 if [ "${BUILD_CHATBOT}" = true ]; then
