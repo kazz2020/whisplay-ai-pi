@@ -80,9 +80,13 @@ cmake "${cmake_args[@]}"
 log "Building llama-server and llama-cli"
 cmake --build "${BUILD_DIR}" --config Release --target llama-server llama-cli -j "$(nproc)"
 
-log "Installing binaries to /usr/local/bin"
-sudo install -m 0755 "${BUILD_DIR}/bin/llama-server" /usr/local/bin/llama-server
-sudo install -m 0755 "${BUILD_DIR}/bin/llama-cli" /usr/local/bin/llama-cli
+log "Installing llama.cpp runtime and binaries"
+sudo cmake --install "${BUILD_DIR}" --prefix /usr/local
+
+if command -v ldconfig >/dev/null 2>&1; then
+  log "Refreshing shared library cache"
+  sudo ldconfig
+fi
 
 log "llama.cpp install complete"
 log "Binary: /usr/local/bin/llama-server"

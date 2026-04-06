@@ -183,11 +183,24 @@ def run_openwakeword() -> int:
     log(
         f"Engine=openwakeword models={model_paths or wake_words} threshold={threshold} vad={vad_threshold} speex={enable_speex}"
     )
-    model = Model(
-        wakeword_models=model_paths or wake_words,
-        enable_speex_noise_suppression=enable_speex,
-        vad_threshold=vad_threshold,
-    )
+    try:
+        model = Model(
+            wakeword_models=model_paths or wake_words,
+            enable_speex_noise_suppression=enable_speex,
+            vad_threshold=vad_threshold,
+        )
+    except ModuleNotFoundError as exc:
+        if enable_speex and getattr(exc, "name", "") == "speexdsp_ns":
+            log_error(
+                "speexdsp_ns is not installed; retrying openWakeWord without Speex noise suppression"
+            )
+            model = Model(
+                wakeword_models=model_paths or wake_words,
+                enable_speex_noise_suppression=False,
+                vad_threshold=vad_threshold,
+            )
+        else:
+            raise
 
     sox_cmd = [
         "sox",
