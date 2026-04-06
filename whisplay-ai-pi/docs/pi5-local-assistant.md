@@ -14,7 +14,7 @@ This repo now supports a fully local Raspberry Pi 5 setup for the Whisplay HAT:
 For a Pi 5 8GB, start with:
 
 - Brain profile: `Balanced`
-- LLM: `ggml-org/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M`
+- LLM: `bartowski/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M`
 - ASR: `tiny` faster-whisper model
 - TTS voice: `en_US-lessac-medium`
 - Context size: `2048`

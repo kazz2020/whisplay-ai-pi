@@ -225,7 +225,7 @@ pick_llm_repo() {
     1)
       BRAIN_PROFILE_NAME="fast"
       BRAIN_PROFILE_LABEL="Fast"
-      LLAMA_HF_REPO="ggml-org/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M"
+      LLAMA_HF_REPO="bartowski/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M"
       LLAMA_ALIAS="qwen2.5-0.5b-instruct"
       BRAIN_THREADS_DEFAULT="4"
       BRAIN_CONTEXT_DEFAULT="1536"
@@ -236,7 +236,7 @@ pick_llm_repo() {
     2)
       BRAIN_PROFILE_NAME="balanced"
       BRAIN_PROFILE_LABEL="Balanced"
-      LLAMA_HF_REPO="ggml-org/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M"
+      LLAMA_HF_REPO="bartowski/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M"
       LLAMA_ALIAS="qwen2.5-1.5b-instruct"
       BRAIN_THREADS_DEFAULT="4"
       BRAIN_CONTEXT_DEFAULT="2048"
@@ -258,7 +258,7 @@ pick_llm_repo() {
     4)
       BRAIN_PROFILE_NAME="custom"
       BRAIN_PROFILE_LABEL="Custom"
-      LLAMA_HF_REPO=$(prompt_value "Enter custom llama.cpp HF repo[:quant]" "ggml-org/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M")
+      LLAMA_HF_REPO=$(prompt_value "Enter custom llama.cpp HF repo[:quant]" "bartowski/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M")
       LLAMA_ALIAS=$(prompt_value "Enter model alias to expose via llama-server" "custom-local-model")
       BRAIN_THREADS_DEFAULT="4"
       BRAIN_CONTEXT_DEFAULT="2048"
