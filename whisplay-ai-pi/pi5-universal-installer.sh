@@ -11,6 +11,16 @@ DEFAULT_PIPER_DIR="${HOME}/piper"
 DRIVER_REBOOT_RECOMMENDED=false
 ASR_LANGUAGE="en"
 ASSISTANT_SYSTEM_PROMPT="You are a cheerful and helpful assistant. Reply in English unless the user clearly asks for another language. Keep answers concise and natural."
+WAKE_WORD_ENGINE="disabled"
+WAKE_WORD_PHRASE=""
+WAKE_WORD_REFERENCE_DIR=""
+WAKE_WORD_THRESHOLD="0.12"
+WAKE_WORD_BUFFER_SIZE="1.8"
+WAKE_WORD_SLIDE_SIZE="0.25"
+WAKE_WORD_SAMPLE_COUNT="4"
+WAKE_WORD_SAMPLE_DURATION="2.5"
+WAKE_WORD_OPENWAKEWORD_MODEL="hey_jarvis"
+RECORD_WAKE_WORD_SAMPLES=false
 
 log() {
   echo "[pi5-installer] $*"
@@ -45,6 +55,10 @@ prompt_value() {
   local reply
   read -r -p "${prompt} [${default_value}] " reply
   printf '%s\n' "${reply:-$default_value}"
+}
+
+slugify() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
 }
 
 set_env_value() {
@@ -136,6 +150,41 @@ model_name = ${ASR_MODEL@Q}
 WhisperModel(model_name, device="cpu", compute_type="int8", cpu_threads=3)
 print(f"faster-whisper model ready: {model_name}")
 PY
+}
+
+install_local_wake_runtime() {
+  log "Installing local-wake dependencies"
+  sudo apt-get update
+  sudo apt-get install -y libportaudio2 sox libsox-fmt-mp3
+  python3 -m pip install --break-system-packages local-wake==0.1.2
+}
+
+install_openwakeword_runtime() {
+  log "Installing openWakeWord dependencies"
+  sudo apt-get update
+  sudo apt-get install -y sox libsox-fmt-mp3
+  python3 -m pip install --break-system-packages openwakeword==0.6.0
+}
+
+record_local_wake_samples() {
+  local sample_dir="$1"
+  local sample_count="$2"
+  local sample_duration="$3"
+  local phrase="$4"
+
+  mkdir -p "${sample_dir}"
+
+  if compgen -G "${sample_dir}/*.wav" >/dev/null 2>&1; then
+    if prompt_yes_no "Existing wake word samples found in ${sample_dir}. Replace them" "y"; then
+      rm -f "${sample_dir}"/*.wav
+    fi
+  fi
+
+  WAKE_WORD_REFERENCE_DIR="${sample_dir}" \
+  WAKE_WORD_PHRASE="${phrase}" \
+  WAKE_WORD_LOCAL_WAKE_BIN="${WAKE_WORD_LOCAL_WAKE_BIN:-lwake}" \
+  bash "${PROJECT_ROOT}/scripts/setup_local_wakeword.sh" \
+    "${sample_count}" "${sample_duration}"
 }
 
 download_llama_cpp_model() {
@@ -324,6 +373,66 @@ pick_tts_voice() {
   esac
 }
 
+pick_wake_word_config() {
+  echo "Select wake word engine:"
+  echo "  1. local-wake (recommended, custom phrase from your own recordings)"
+  echo "  2. openWakeWord (English preset model)"
+  local choice
+  read -r -p "Choice [1] " choice
+  choice="${choice:-1}"
+  case "${choice}" in
+    1)
+      WAKE_WORD_ENGINE="local-wake"
+      echo "Select the wake phrase label:"
+      echo "  1. hey whisplay"
+      echo "  2. hello assistant"
+      echo "  3. computer"
+      echo "  4. custom phrase"
+      local phrase_choice
+      read -r -p "Choice [1] " phrase_choice
+      phrase_choice="${phrase_choice:-1}"
+      case "${phrase_choice}" in
+        1) WAKE_WORD_PHRASE="hey whisplay" ;;
+        2) WAKE_WORD_PHRASE="hello assistant" ;;
+        3) WAKE_WORD_PHRASE="computer" ;;
+        4) WAKE_WORD_PHRASE=$(prompt_value "Enter custom wake phrase" "hey whisplay") ;;
+        *) die "Invalid wake phrase choice" ;;
+      esac
+      WAKE_WORD_THRESHOLD=$(prompt_value "local-wake distance threshold (lower is stricter)" "0.12")
+      WAKE_WORD_BUFFER_SIZE=$(prompt_value "local-wake buffer size (seconds)" "1.8")
+      WAKE_WORD_SLIDE_SIZE=$(prompt_value "local-wake slide size (seconds)" "0.25")
+      WAKE_WORD_SAMPLE_COUNT=$(prompt_value "Number of reference recordings" "4")
+      WAKE_WORD_SAMPLE_DURATION=$(prompt_value "Duration of each reference recording (seconds)" "2.5")
+      WAKE_WORD_REFERENCE_DIR="${PROJECT_ROOT}/data/wakewords/$(slugify "${WAKE_WORD_PHRASE}")"
+      if prompt_yes_no "Record wake word samples during install" "y"; then
+        RECORD_WAKE_WORD_SAMPLES=true
+      fi
+      ;;
+    2)
+      WAKE_WORD_ENGINE="openwakeword"
+      echo "Select the English preset wake word:"
+      echo "  1. hey_jarvis"
+      echo "  2. hey_mycroft"
+      echo "  3. hey_rhasspy"
+      echo "  4. alexa"
+      local oww_choice
+      read -r -p "Choice [1] " oww_choice
+      oww_choice="${oww_choice:-1}"
+      case "${oww_choice}" in
+        1) WAKE_WORD_OPENWAKEWORD_MODEL="hey_jarvis" ;;
+        2) WAKE_WORD_OPENWAKEWORD_MODEL="hey_mycroft" ;;
+        3) WAKE_WORD_OPENWAKEWORD_MODEL="hey_rhasspy" ;;
+        4) WAKE_WORD_OPENWAKEWORD_MODEL="alexa" ;;
+        *) die "Invalid openWakeWord choice" ;;
+      esac
+      WAKE_WORD_THRESHOLD=$(prompt_value "openWakeWord confidence threshold" "0.5")
+      ;;
+    *)
+      die "Invalid wake word engine choice"
+      ;;
+  esac
+}
+
 if [ "$(uname -s)" != "Linux" ]; then
   die "This installer must run on Raspberry Pi OS"
 fi
@@ -347,12 +456,14 @@ BUILD_CHATBOT=false
 INSTALL_SERVICE=false
 DOWNLOAD_LLM_MODEL=false
 DOWNLOAD_ASR_MODEL=false
+INSTALL_WAKE_WORD=false
 
 if prompt_yes_no "Install Whisplay HAT driver" "y"; then INSTALL_DRIVER=true; fi
 if prompt_yes_no "Install chatbot dependencies (Node, Python, fonts)" "y"; then INSTALL_CHATBOT_DEPS=true; fi
 if prompt_yes_no "Build and install llama.cpp server" "y"; then INSTALL_LLAMA_CPP=true; fi
 if prompt_yes_no "Install local ASR (faster-whisper)" "y"; then INSTALL_LOCAL_ASR=true; fi
 if prompt_yes_no "Install local TTS (Piper HTTP)" "y"; then INSTALL_LOCAL_TTS=true; fi
+if prompt_yes_no "Install wake word detection" "y"; then INSTALL_WAKE_WORD=true; fi
 if prompt_yes_no "Build chatbot TypeScript app" "y"; then BUILD_CHATBOT=true; fi
 if prompt_yes_no "Install chatbot systemd service" "y"; then INSTALL_SERVICE=true; fi
 if [ "${INSTALL_LLAMA_CPP}" = true ] || [ -d "${PREFERRED_LLAMA_DIR}" ] || [ -x "/usr/local/bin/llama-server" ]; then
@@ -365,6 +476,9 @@ fi
 pick_llm_repo
 pick_asr_model
 pick_tts_voice
+if [ "${INSTALL_WAKE_WORD}" = true ]; then
+  pick_wake_word_config
+fi
 
 log "Selected brain profile: ${BRAIN_PROFILE_LABEL}"
 log "Brain model: ${LLAMA_HF_REPO}"
@@ -403,6 +517,21 @@ set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_MODEL_SIZE_OR_PATH" "${ASR_M
 set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_LANGUAGE" "${ASR_LANGUAGE}"
 set_env_value "${CHATBOT_ENV_FILE}" "PIPER_HTTP_MODEL" "${PIPER_DIR}/${PIPER_VOICE}"
 set_env_value "${CHATBOT_ENV_FILE}" "SYSTEM_PROMPT" "${ASSISTANT_SYSTEM_PROMPT}"
+if [ "${INSTALL_WAKE_WORD}" = true ]; then
+  set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_ENABLED" "true"
+  set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_ENGINE" "${WAKE_WORD_ENGINE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_THRESHOLD" "${WAKE_WORD_THRESHOLD}"
+  if [ "${WAKE_WORD_ENGINE}" = "local-wake" ]; then
+    set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_PHRASE" "${WAKE_WORD_PHRASE}"
+    set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_REFERENCE_DIR" "${WAKE_WORD_REFERENCE_DIR}"
+    set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_LOCAL_WAKE_BUFFER_SIZE" "${WAKE_WORD_BUFFER_SIZE}"
+    set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_LOCAL_WAKE_SLIDE_SIZE" "${WAKE_WORD_SLIDE_SIZE}"
+  else
+    set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORDS" "${WAKE_WORD_OPENWAKEWORD_MODEL}"
+  fi
+else
+  set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_ENABLED" "false"
+fi
 
 if [ "${INSTALL_DRIVER}" = true ]; then
   ensure_repo "${DRIVER_DIR}" "${DRIVER_REPO_URL}" "Whisplay driver"
@@ -425,6 +554,14 @@ chmod +x "${PROJECT_ROOT}/scripts/serve_llama_cpp.sh" "${PROJECT_ROOT}/scripts/i
 if [ "${INSTALL_LOCAL_ASR}" = true ]; then
   log "Installing faster-whisper dependencies"
   python3 -m pip install --break-system-packages faster-whisper Flask
+fi
+
+if [ "${INSTALL_WAKE_WORD}" = true ]; then
+  if [ "${WAKE_WORD_ENGINE}" = "local-wake" ]; then
+    install_local_wake_runtime
+  else
+    install_openwakeword_runtime
+  fi
 fi
 
 if [ "${DOWNLOAD_ASR_MODEL}" = true ]; then
@@ -466,9 +603,22 @@ if [ "${INSTALL_SERVICE}" = true ]; then
   bash startup.sh
 fi
 
+if [ "${INSTALL_WAKE_WORD}" = true ] && [ "${WAKE_WORD_ENGINE}" = "local-wake" ] && [ "${RECORD_WAKE_WORD_SAMPLES}" = true ]; then
+  log "Recording local-wake reference samples for '${WAKE_WORD_PHRASE}'"
+  record_local_wake_samples "${WAKE_WORD_REFERENCE_DIR}" "${WAKE_WORD_SAMPLE_COUNT}" "${WAKE_WORD_SAMPLE_DURATION}" "${WAKE_WORD_PHRASE}"
+fi
+
 log "Install complete"
 log "Configured .env: ${CHATBOT_ENV_FILE}"
 log "Brain profile prepared: ${BRAIN_PROFILE_LABEL}"
+if [ "${INSTALL_WAKE_WORD}" = true ]; then
+  if [ "${WAKE_WORD_ENGINE}" = "local-wake" ]; then
+    log "Wake word enabled with local-wake phrase '${WAKE_WORD_PHRASE}'"
+    log "Reference directory: ${WAKE_WORD_REFERENCE_DIR}"
+  else
+    log "Wake word enabled with openWakeWord model '${WAKE_WORD_OPENWAKEWORD_MODEL}'"
+  fi
+fi
 if [ "${DRIVER_REBOOT_RECOMMENDED}" = true ]; then
   log "Driver install completed. Reboot the Pi before expecting audio hardware to work correctly."
 fi

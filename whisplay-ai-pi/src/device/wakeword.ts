@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { spawn, ChildProcess } from "child_process";
 import { resolve } from "path";
 import dotenv from "dotenv";
+import { traceEvent } from "../utils/trace";
 dotenv.config();
 
 const pythonBinary = process.env.WAKE_WORD_PYTHON_PATH || "python3";
@@ -16,6 +17,11 @@ export class WakeWordListener extends EventEmitter {
     if (enabled !== "true") return;
 
     const scriptPath = resolve(__dirname, "../../python/wakeword.py");
+    traceEvent("wakeword", "Starting wake word listener", {
+      engine: process.env.WAKE_WORD_ENGINE || "openwakeword",
+      pythonBinary,
+      scriptPath,
+    });
     this.process = spawn(pythonBinary, [scriptPath], {
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
@@ -28,6 +34,7 @@ export class WakeWordListener extends EventEmitter {
         const line = this.buffer.slice(0, newlineIndex).trim();
         this.buffer = this.buffer.slice(newlineIndex + 1);
         if (line.startsWith("WAKE")) {
+          traceEvent("wakeword", "Wake word detected", { line });
           this.emit("wake", line);
         } else if (line) {
           console.log(`[WakeWord] ${line}`);
@@ -39,11 +46,13 @@ export class WakeWordListener extends EventEmitter {
     this.process.stderr?.on("data", (data: Buffer) => {
       const message = data.toString().trim();
       if (message) {
+        traceEvent("wakeword", "Wake word stderr", { message });
         console.error(`[WakeWord] ${message}`);
       }
     });
 
     this.process.on("close", (code) => {
+      traceEvent("wakeword", "Wake word listener exited", { code });
       console.log(`[WakeWord] process exited with code ${code}`);
       this.process = null;
     });
@@ -51,6 +60,7 @@ export class WakeWordListener extends EventEmitter {
 
   stop(): void {
     if (!this.process) return;
+    traceEvent("wakeword", "Stopping wake word listener");
     this.process.kill("SIGTERM");
     this.process = null;
   }

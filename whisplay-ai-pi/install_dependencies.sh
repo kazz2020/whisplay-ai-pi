@@ -18,7 +18,7 @@ command_exists() {
 
 # apt install sox libsox-fmt-mp3 mpg123
 sudo apt-get update
-sudo apt-get install -y sox mpg123 libsox-fmt-mp3 python3-dev libcairo2 libcairo2-dev unzip
+sudo apt-get install -y sox mpg123 libsox-fmt-mp3 libportaudio2 python3-dev libcairo2 libcairo2-dev unzip
 
 # enable spi
 sudo raspi-config nonint do_spi 0
@@ -61,7 +61,7 @@ fi
 unzip -o emoji_svg.zip
 cd ..
 
-chmod +x "$(pwd)/scripts/serve_llama_cpp.sh" "$(pwd)/scripts/install_llama_cpp.sh" 2>/dev/null || true
+chmod +x "$(pwd)/scripts/serve_llama_cpp.sh" "$(pwd)/scripts/install_llama_cpp.sh" "$(pwd)/scripts/setup_local_wakeword.sh" 2>/dev/null || true
 
 
 # Check if git is installed

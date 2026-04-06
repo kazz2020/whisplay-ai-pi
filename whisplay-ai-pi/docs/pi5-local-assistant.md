@@ -21,6 +21,13 @@ For a Pi 5 8GB, start with:
 
 These defaults are encoded in `.env.pi5-local.template`.
 
+If you want a Polish-first local setup, start from `.env.pi5-local-pl.template`. That preset switches to:
+
+- `FASTER_WHISPER_MODEL_SIZE_OR_PATH=base`
+- `FASTER_WHISPER_LANGUAGE=pl`
+- `PIPER_HTTP_MODEL=/home/pi/piper/pl_PL-gosia-medium`
+- a Polish reply `SYSTEM_PROMPT`
+
 The installer now offers these Pi-oriented brain profiles:
 
 - `Fast`: Qwen2.5 0.5B, tuned for maximum responsiveness
@@ -51,10 +58,36 @@ The installer can:
 - install the WM8960 driver for the Whisplay HAT
 - install chatbot dependencies
 - install local faster-whisper and Piper dependencies
+- install wake word detection with either local-wake or openWakeWord
 - pre-download the selected local ASR and LLM models
 - generate a local `.env`
 - build the chatbot
 - install the systemd service
+
+## Wake word options
+
+For Raspberry Pi, prefer `local-wake` if you want to choose your own phrase. It works by comparing live audio against a small set of reference recordings that you record on the Pi itself.
+
+The installer now offers:
+
+- `local-wake`: recommended, supports custom phrases and non-English phrases, but works best for the speaker who recorded the samples
+- `openWakeWord`: fallback option with English preset models such as `hey_jarvis`
+
+If you choose `local-wake`, the installer can immediately record 3 to 5 reference samples and will write matching settings such as:
+
+- `WAKE_WORD_ENABLED=true`
+- `WAKE_WORD_ENGINE=local-wake`
+- `WAKE_WORD_PHRASE=...`
+- `WAKE_WORD_REFERENCE_DIR=...`
+- `WAKE_WORD_THRESHOLD=0.12`
+
+You can re-record the samples later with:
+
+```bash
+bash scripts/setup_local_wakeword.sh
+```
+
+If you hear false activations, lower the threshold slightly. If the wake phrase is missed too often, raise it slightly or re-record cleaner samples.
 
 ## Manual llama.cpp setup
 
