@@ -227,7 +227,7 @@ repo_map = {
 repo_id = repo_map.get(model_name, model_name)
 
 try:
-    from huggingface_hub import snapshot_download
+  from huggingface_hub import hf_hub_download, list_repo_files
 except Exception:
     subprocess.check_call([
         sys.executable,
@@ -237,17 +237,35 @@ except Exception:
         "--break-system-packages",
         "huggingface_hub>=0.30.0",
     ])
-    from huggingface_hub import snapshot_download
+  from huggingface_hub import hf_hub_download, list_repo_files
 
 print(f"Downloading faster-whisper files from: {repo_id}", flush=True)
 if token:
   print("Using Hugging Face token for faster-whisper download", flush=True)
-local_path = snapshot_download(
-  repo_id=repo_id,
-  repo_type="model",
-  resume_download=True,
-  token=token,
-)
+
+all_files = list_repo_files(repo_id=repo_id, repo_type="model", token=token)
+skip_suffixes = (".md", ".txt")
+skip_names = {".gitattributes", "README.md"}
+files = [
+  name for name in all_files
+  if name not in skip_names and not name.lower().endswith(skip_suffixes)
+]
+
+if not files:
+  raise SystemExit(f"No downloadable model files found in repo: {repo_id}")
+
+files.sort()
+local_path = ""
+for index, filename in enumerate(files, start=1):
+  print(f"[{index}/{len(files)}] Downloading {filename}", flush=True)
+  local_path = hf_hub_download(
+    repo_id=repo_id,
+    filename=filename,
+    repo_type="model",
+    token=token,
+  )
+
+local_path = os.path.dirname(local_path)
 print(f"faster-whisper model ready: {local_path}", flush=True)
 PY
 }
