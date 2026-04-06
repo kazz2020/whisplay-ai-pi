@@ -209,6 +209,7 @@ download_llama_cpp_model() {
   local llama_host llama_port llama_pid ready=0
   local last_progress_line=""
   local loop_count=0
+  local saw_main_loop=0
   local health_url models_url log_file
   llama_host="127.0.0.1"
   llama_port="18080"
@@ -264,6 +265,11 @@ PY
       if [ -n "${progress_line}" ] && [ "${progress_line}" != "${last_progress_line}" ]; then
         log "llama.cpp: ${progress_line}"
         last_progress_line="${progress_line}"
+        case "${progress_line}" in
+          *"main: starting the main loop"*)
+            saw_main_loop=1
+            ;;
+        esac
       elif [ $((loop_count % 10)) -eq 0 ]; then
         log "llama.cpp warm-up still running. Current log: ${log_file}"
       fi
@@ -271,7 +277,13 @@ PY
       log "Waiting for llama-server to start and begin downloading..."
     fi
 
-    if curl -sf "${health_url}" >/dev/null 2>&1 || curl -sf "${models_url}" >/dev/null 2>&1; then
+    if curl --connect-timeout 2 --max-time 4 -sf "${health_url}" >/dev/null 2>&1 || \
+       curl --connect-timeout 2 --max-time 4 -sf "${models_url}" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+
+    if [ "${saw_main_loop}" -eq 1 ]; then
       ready=1
       break
     fi
