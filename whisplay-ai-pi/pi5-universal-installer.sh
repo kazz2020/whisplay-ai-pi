@@ -65,6 +65,37 @@ ensure_repo() {
   git clone --depth 1 "${repo_url}" "${repo_dir}"
 }
 
+patch_whisplay_driver_installer() {
+  local repo_dir="$1"
+  local installer_path="${repo_dir}/Driver/install_wm8960_drive.sh"
+
+  if [ ! -f "${installer_path}" ]; then
+    log "Whisplay driver installer not found at ${installer_path}; skipping local compatibility patch"
+    return 0
+  fi
+
+  if grep -Fq 'return 0 # keep power warnings non-fatal for callers' "${installer_path}"; then
+    return 0
+  fi
+
+  if grep -Fq '[[ "$warned" -eq 0 ]] && ok "No obvious power warnings detected since boot."' "${installer_path}"; then
+    python3 - <<PY
+from pathlib import Path
+
+path = Path(${installer_path@Q})
+text = path.read_text()
+old = '  [[ "$warned" -eq 0 ]] && ok "No obvious power warnings detected since boot."\n}\n'
+new = '  if [[ "$warned" -eq 0 ]]; then\n    ok "No obvious power warnings detected since boot."\n  fi\n\n  return 0 # keep power warnings non-fatal for callers\n}\n'
+
+if old not in text:
+    raise SystemExit("Expected power_warning block not found")
+
+path.write_text(text.replace(old, new, 1))
+PY
+    log "Patched upstream Whisplay driver installer to keep power warnings non-fatal"
+  fi
+}
+
 find_llama_server_bin() {
   local candidates=(
     "/usr/local/bin/llama-server"
@@ -329,6 +360,7 @@ set_env_value "${CHATBOT_ENV_FILE}" "PIPER_HTTP_MODEL" "${PIPER_DIR}/${PIPER_VOI
 
 if [ "${INSTALL_DRIVER}" = true ]; then
   ensure_repo "${DRIVER_DIR}" "${DRIVER_REPO_URL}" "Whisplay driver"
+  patch_whisplay_driver_installer "${DRIVER_DIR}"
   log "Installing WM8960 driver"
   cd "${DRIVER_DIR}/Driver"
   sudo bash install_wm8960_drive.sh
