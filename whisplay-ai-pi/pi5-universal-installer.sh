@@ -18,7 +18,7 @@ WAKE_WORD_THRESHOLD="0.12"
 WAKE_WORD_BUFFER_SIZE="1.8"
 WAKE_WORD_SLIDE_SIZE="0.25"
 WAKE_WORD_SAMPLE_COUNT="4"
-WAKE_WORD_SAMPLE_DURATION="2.5"
+WAKE_WORD_SAMPLE_DURATION="3"
 WAKE_WORD_OPENWAKEWORD_MODEL="hey_jarvis"
 RECORD_WAKE_WORD_SAMPLES=false
 
@@ -59,6 +59,26 @@ prompt_value() {
 
 slugify() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
+}
+
+normalize_positive_int() {
+  local raw_value="$1"
+  local fallback="$2"
+  python3 - <<PY
+import math
+
+raw = ${raw_value@Q}.strip()
+fallback = ${fallback@Q}.strip()
+
+try:
+    value = int(math.ceil(float(raw)))
+    if value < 1:
+        raise ValueError
+except Exception:
+    value = int(float(fallback))
+
+print(value)
+PY
 }
 
 set_env_value() {
@@ -171,6 +191,9 @@ record_local_wake_samples() {
   local sample_count="$2"
   local sample_duration="$3"
   local phrase="$4"
+
+  sample_count=$(normalize_positive_int "${sample_count}" "4")
+  sample_duration=$(normalize_positive_int "${sample_duration}" "3")
 
   mkdir -p "${sample_dir}"
 
@@ -448,7 +471,7 @@ pick_wake_word_config() {
       WAKE_WORD_BUFFER_SIZE=$(prompt_value "local-wake buffer size (seconds)" "1.8")
       WAKE_WORD_SLIDE_SIZE=$(prompt_value "local-wake slide size (seconds)" "0.25")
       WAKE_WORD_SAMPLE_COUNT=$(prompt_value "Number of reference recordings" "4")
-      WAKE_WORD_SAMPLE_DURATION=$(prompt_value "Duration of each reference recording (seconds)" "2.5")
+      WAKE_WORD_SAMPLE_DURATION=$(prompt_value "Duration of each reference recording (seconds, whole numbers work best)" "3")
       WAKE_WORD_REFERENCE_DIR="${PROJECT_ROOT}/data/wakewords/$(slugify "${WAKE_WORD_PHRASE}")"
       if prompt_yes_no "Record wake word samples during install" "y"; then
         RECORD_WAKE_WORD_SAMPLES=true

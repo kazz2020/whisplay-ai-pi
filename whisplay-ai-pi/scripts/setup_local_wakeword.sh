@@ -22,7 +22,30 @@ REFERENCE_DIR="${WAKE_WORD_REFERENCE_DIR:-$(get_env_value WAKE_WORD_REFERENCE_DI
 LOCAL_WAKE_BIN="${WAKE_WORD_LOCAL_WAKE_BIN:-$(get_env_value WAKE_WORD_LOCAL_WAKE_BIN)}"
 LOCAL_WAKE_BIN="${LOCAL_WAKE_BIN:-lwake}"
 SAMPLE_COUNT="${1:-${WAKE_WORD_SAMPLE_COUNT:-4}}"
-SAMPLE_DURATION="${2:-${WAKE_WORD_SAMPLE_DURATION:-2.5}}"
+SAMPLE_DURATION="${2:-${WAKE_WORD_SAMPLE_DURATION:-3}}"
+
+normalize_positive_int() {
+  local raw_value="$1"
+  local fallback="$2"
+  python3 - <<PY
+import math
+
+raw = ${raw_value@Q}.strip()
+fallback = ${fallback@Q}.strip()
+
+try:
+    value = int(math.ceil(float(raw)))
+    if value < 1:
+        raise ValueError
+except Exception:
+    value = int(float(fallback))
+
+print(value)
+PY
+}
+
+SAMPLE_COUNT=$(normalize_positive_int "${SAMPLE_COUNT}" "4")
+SAMPLE_DURATION=$(normalize_positive_int "${SAMPLE_DURATION}" "3")
 
 if ! command -v "${LOCAL_WAKE_BIN}" >/dev/null 2>&1; then
   echo "local-wake binary '${LOCAL_WAKE_BIN}' was not found. Install wake word dependencies first." >&2
