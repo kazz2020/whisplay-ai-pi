@@ -209,10 +209,11 @@ download_llama_cpp_model() {
   local llama_host llama_port llama_pid ready=0
   local last_progress_line=""
   local loop_count=0
-  local health_url log_file
+  local health_url models_url log_file
   llama_host="127.0.0.1"
   llama_port="18080"
   health_url="http://${llama_host}:${llama_port}/health"
+  models_url="http://${llama_host}:${llama_port}/v1/models"
   log_file="/tmp/whisplay-llama-download.log"
 
   : > "${log_file}"
@@ -270,7 +271,7 @@ PY
       log "Waiting for llama-server to start and begin downloading..."
     fi
 
-    if curl -sf "${health_url}" >/dev/null 2>&1; then
+    if curl -sf "${health_url}" >/dev/null 2>&1 || curl -sf "${models_url}" >/dev/null 2>&1; then
       ready=1
       break
     fi
