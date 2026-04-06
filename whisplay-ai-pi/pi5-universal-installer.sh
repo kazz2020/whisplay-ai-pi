@@ -21,6 +21,7 @@ OPENAI_API_BASE_URL_VALUE="https://api.deepseek.com/v1"
 OPENAI_API_KEY_VALUE=""
 OPENAI_LLM_MODEL_VALUE="deepseek-chat"
 OPENAI_ENABLE_TOOLS_VALUE="false"
+LLAMA_CPP_HF_TOKEN_VALUE="${HF_TOKEN:-}"
 WAKE_WORD_ENGINE="disabled"
 WAKE_WORD_PHRASE=""
 WAKE_WORD_REFERENCE_DIR=""
@@ -78,6 +79,16 @@ prompt_required_value() {
     fi
     warn "A value is required for this option."
   done
+}
+
+pick_llama_hf_auth() {
+  if [ "${LLM_SERVER_SELECTION}" != "llama.cpp" ] || [ -z "${LLAMA_HF_REPO:-}" ]; then
+    return 0
+  fi
+
+  if prompt_yes_no "Use a Hugging Face token for llama.cpp model access/download" "n"; then
+    LLAMA_CPP_HF_TOKEN_VALUE=$(prompt_required_value "Enter Hugging Face token (hf_...)")
+  fi
 }
 
 slugify() {
@@ -234,6 +245,14 @@ record_local_wake_samples() {
 }
 
 download_llama_cpp_model() {
+  if [ -n "${LLAMA_HF_REPO:-}" ]; then
+    log "Pre-downloading llama.cpp model from Hugging Face: ${LLAMA_HF_REPO}"
+    if download_llama_cpp_model_via_hf; then
+      return 0
+    fi
+    warn "Direct Hugging Face pre-download failed; falling back to llama-server warm-up"
+  fi
+
   local server_bin
   server_bin=$(find_llama_server_bin) || {
     warn "llama-server binary not found after install; skipping llama.cpp model warm-up"
@@ -368,6 +387,86 @@ PY
   kill "${llama_pid}" >/dev/null 2>&1 || true
   wait "${llama_pid}" 2>/dev/null || true
   log "llama.cpp model ready"
+}
+
+download_llama_cpp_model_via_hf() {
+  if ! command -v python3 >/dev/null 2>&1; then
+    warn "python3 not found; cannot use direct Hugging Face pre-download"
+    return 1
+  fi
+
+  log "Trying direct Hugging Face download for faster, visible GGUF progress"
+  local download_output download_path
+  download_output=$(REPO_SPEC="${LLAMA_HF_REPO}" HF_TOKEN_VALUE="${LLAMA_CPP_HF_TOKEN_VALUE:-}" python3 - <<'PY'
+import os
+import subprocess
+import sys
+
+repo_spec = os.environ["REPO_SPEC"].strip()
+token = os.environ.get("HF_TOKEN_VALUE", "").strip() or None
+
+try:
+    from huggingface_hub import hf_hub_download, list_repo_files
+except Exception:
+    subprocess.check_call([
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--break-system-packages",
+        "huggingface_hub>=0.30.0",
+    ])
+    from huggingface_hub import hf_hub_download, list_repo_files
+
+if ":" in repo_spec:
+    repo_id, selector = repo_spec.rsplit(":", 1)
+else:
+    repo_id, selector = repo_spec, ""
+
+selector_lower = selector.lower()
+files = list_repo_files(repo_id=repo_id, repo_type="model", token=token)
+ggufs = [name for name in files if name.lower().endswith(".gguf")]
+if not ggufs:
+    raise SystemExit(f"No GGUF files found in Hugging Face repo: {repo_id}")
+
+if selector:
+    exact = [name for name in ggufs if name == selector or os.path.basename(name) == selector]
+    if exact:
+        target = exact[0]
+    else:
+        contains = [name for name in ggufs if selector_lower in os.path.basename(name).lower()]
+        if not contains:
+            raise SystemExit(f"Could not find a GGUF file matching '{selector}' in repo {repo_id}")
+        contains.sort(key=lambda item: (len(os.path.basename(item)), item))
+        target = contains[0]
+else:
+    ggufs.sort(key=lambda item: (len(os.path.basename(item)), item))
+    target = ggufs[0]
+
+print(f"Resolved GGUF file: {target}", file=sys.stderr)
+local_path = hf_hub_download(
+    repo_id=repo_id,
+    filename=target,
+    repo_type="model",
+    token=token,
+    resume_download=True,
+)
+print(local_path)
+PY
+)
+  download_path=$(printf '%s\n' "${download_output}" | tail -n 1)
+
+  if [ -z "${download_path}" ] || [ ! -f "${download_path}" ]; then
+    warn "Hugging Face pre-download did not return a valid model path"
+    return 1
+  fi
+
+  export LLAMA_CPP_MODEL_PATH="${download_path}"
+  if [ -n "${CHATBOT_ENV_FILE:-}" ] && [ -f "${CHATBOT_ENV_FILE}" ]; then
+    set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_MODEL_PATH" "${download_path}"
+  fi
+  log "llama.cpp GGUF ready at: ${download_path}"
+  return 0
 }
 
 pick_llm_repo() {
@@ -693,6 +792,7 @@ pick_tts_voice
 pick_llm_runtime_mode
 if [ "${LLM_SERVER_SELECTION}" = "llama.cpp" ]; then
   pick_llm_repo
+  pick_llama_hf_auth
 fi
 pick_polish_quality_mode
 if [ "${INSTALL_WAKE_WORD}" = true ]; then
@@ -744,6 +844,9 @@ set_env_value "${CHATBOT_ENV_FILE}" "SERVE_LLAMA_CPP" "${SERVE_LLAMA_CPP_VALUE}"
 set_env_value "${CHATBOT_ENV_FILE}" "SERVE_OLLAMA" "${SERVE_OLLAMA_VALUE}"
 if [ "${LLM_SERVER_SELECTION}" = "llama.cpp" ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_HF_REPO" "${LLAMA_HF_REPO}"
+  if [ -n "${LLAMA_CPP_HF_TOKEN_VALUE:-}" ]; then
+    set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_HF_TOKEN" "${LLAMA_CPP_HF_TOKEN_VALUE}"
+  fi
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_MODEL" "${LLAMA_ALIAS}"
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_ALIAS" "${LLAMA_ALIAS}"
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_THREADS" "${CHATBOT_THREADS}"
