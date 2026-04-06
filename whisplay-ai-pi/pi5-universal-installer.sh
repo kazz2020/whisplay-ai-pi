@@ -400,6 +400,8 @@ if [ "${INSTALL_CHATBOT_DEPS}" = true ]; then
   bash install_dependencies.sh
 fi
 
+chmod +x "${PROJECT_ROOT}/scripts/serve_llama_cpp.sh" "${PROJECT_ROOT}/scripts/install_llama_cpp.sh" 2>/dev/null || true
+
 if [ "${INSTALL_LOCAL_ASR}" = true ]; then
   log "Installing faster-whisper dependencies"
   python3 -m pip install --break-system-packages faster-whisper Flask

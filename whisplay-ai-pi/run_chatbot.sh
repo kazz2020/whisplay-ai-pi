@@ -200,7 +200,7 @@ fi
 
 if [ "$serve_llama_cpp" = true ]; then
   echo "Starting llama.cpp server..."
-  start_bg_command "llama.cpp" "$script_dir/scripts/serve_llama_cpp.sh"
+  start_bg_command "llama.cpp" bash "$script_dir/scripts/serve_llama_cpp.sh"
   llama_cpp_pid=$!
 fi
 

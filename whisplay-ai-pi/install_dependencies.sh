@@ -61,6 +61,8 @@ fi
 unzip -o emoji_svg.zip
 cd ..
 
+chmod +x "$(pwd)/scripts/serve_llama_cpp.sh" "$(pwd)/scripts/install_llama_cpp.sh" 2>/dev/null || true
+
 
 # Check if git is installed
 # if ! command_exists git; then
