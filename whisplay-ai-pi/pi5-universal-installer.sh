@@ -257,12 +257,14 @@ download_llama_cpp_model() {
   local loop_count=0
   local saw_main_loop=0
   local saw_download_progress=0
+  local start_ts
   local health_url models_url log_file
   llama_host="127.0.0.1"
   llama_port="18080"
   health_url="http://${llama_host}:${llama_port}/health"
   models_url="http://${llama_host}:${llama_port}/v1/models"
   log_file="/tmp/whisplay-llama-download.log"
+  start_ts=$(date +%s)
 
   : > "${log_file}"
 
@@ -321,10 +323,15 @@ PY
             ;;
         esac
       elif [ $((loop_count % 10)) -eq 0 ]; then
-        log "llama.cpp warm-up still running. Current log: ${log_file}"
+        local log_size elapsed_seconds
+        log_size=$(wc -c < "${log_file}" 2>/dev/null || echo 0)
+        elapsed_seconds=$(( $(date +%s) - start_ts ))
+        log "llama.cpp warm-up still running after ${elapsed_seconds}s. Log size: ${log_size} bytes. Current log: ${log_file}"
       fi
     elif [ $((loop_count % 10)) -eq 0 ]; then
-      log "Waiting for llama-server to start and begin downloading..."
+      local elapsed_seconds
+      elapsed_seconds=$(( $(date +%s) - start_ts ))
+      log "Waiting for llama-server to start and begin downloading... (${elapsed_seconds}s elapsed)"
     fi
 
     if curl --connect-timeout 2 --max-time 4 -sf "${health_url}" >/dev/null 2>&1 || \
