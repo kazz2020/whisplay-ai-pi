@@ -245,7 +245,21 @@ download_llama_cpp_model() {
 
     if [ -s "${log_file}" ]; then
       local progress_line
-      progress_line=$(grep -Eai 'download|progress|gguf|transferred|bytes|%|eta|model|listening|loading|main:' "${log_file}" | tail -n 1 || true)
+      progress_line=$(python3 - <<PY
+from pathlib import Path
+
+path = Path(${log_file@Q})
+data = path.read_bytes()[-8192:]
+text = data.decode("utf-8", errors="ignore").replace("\r", "\n")
+matches = []
+for line in text.splitlines():
+    lower = line.lower()
+    if any(token in lower for token in ["download", "progress", "gguf", "transferred", "bytes", "%", "eta", "model", "listening", "loading", "main:"]):
+        matches.append(line.strip())
+if matches:
+    print(matches[-1])
+PY
+)
       if [ -n "${progress_line}" ] && [ "${progress_line}" != "${last_progress_line}" ]; then
         log "llama.cpp: ${progress_line}"
         last_progress_line="${progress_line}"
