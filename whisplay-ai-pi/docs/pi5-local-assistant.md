@@ -132,6 +132,10 @@ The installer now offers:
 - `openWakeWord`: recommended for an immediate English preset such as `hey_jarvis`
 - `local-wake`: recommended only when you specifically need a custom phrase or non-English phrase
 
+For Polish, `local-wake` is the better default. The installer now offers Polish phrase labels, a slightly stricter local-wake threshold, and Polish end keywords such as `koniec`, `dziekuje`, `to wszystko`, and `do widzenia`.
+
+If you still choose `openWakeWord`, the installer can pre-download the preset model during setup so the first boot can stay offline.
+
 If you choose `local-wake`, the installer can immediately record 3 to 5 reference samples and will write matching settings such as:
 
 - `WAKE_WORD_ENABLED=true`

@@ -56,6 +56,11 @@ WAKE_WORD_SLIDE_SIZE="0.25"
 WAKE_WORD_SAMPLE_COUNT="4"
 WAKE_WORD_SAMPLE_DURATION="3"
 WAKE_WORD_OPENWAKEWORD_MODEL="hey_jarvis"
+WAKE_WORD_COOLDOWN_SEC="1.5"
+WAKE_WORD_VAD_THRESHOLD="0.2"
+WAKE_WORD_ENABLE_SPEEX="true"
+WAKE_WORD_END_KEYWORDS_VALUE="byebye,goodbye,stop"
+DOWNLOAD_OPENWAKEWORD_MODEL=false
 RECORD_WAKE_WORD_SAMPLES=false
 
 if [ -t 1 ]; then
@@ -209,12 +214,15 @@ print_final_review() {
 
   if [ "${INSTALL_WAKE_WORD}" = true ]; then
     print_review_item "Wake engine" "${WAKE_WORD_ENGINE}"
+    print_review_item "Wake end keywords" "${WAKE_WORD_END_KEYWORDS_VALUE}"
     if [ "${WAKE_WORD_ENGINE}" = "local-wake" ]; then
       print_review_item "Wake phrase" "${WAKE_WORD_PHRASE}"
       print_review_item "Wake sample dir" "${WAKE_WORD_REFERENCE_DIR}"
       print_review_item "Record samples" "$(format_enabled "${RECORD_WAKE_WORD_SAMPLES}")"
     else
       print_review_item "Wake model" "${WAKE_WORD_OPENWAKEWORD_MODEL}"
+      print_review_item "Wake cooldown" "${WAKE_WORD_COOLDOWN_SEC}s"
+      print_review_item "Pre-download model" "$(format_enabled "${DOWNLOAD_OPENWAKEWORD_MODEL}")"
     fi
   fi
 }
@@ -268,6 +276,11 @@ reset_install_choices() {
   WAKE_WORD_SAMPLE_COUNT="4"
   WAKE_WORD_SAMPLE_DURATION="3"
   WAKE_WORD_OPENWAKEWORD_MODEL="hey_jarvis"
+  WAKE_WORD_COOLDOWN_SEC="1.5"
+  WAKE_WORD_VAD_THRESHOLD="0.2"
+  WAKE_WORD_ENABLE_SPEEX="true"
+  WAKE_WORD_END_KEYWORDS_VALUE="byebye,goodbye,stop"
+  DOWNLOAD_OPENWAKEWORD_MODEL=false
   RECORD_WAKE_WORD_SAMPLES=false
   INSTALL_DRIVER=false
   INSTALL_CHATBOT_DEPS=false
@@ -472,6 +485,41 @@ pick_polish_speed_profile() {
   if [ "${LLM_SERVER_SELECTION}" = "ollama-cloud" ] && [ -z "${OLLAMA_MODEL_VALUE:-}" ]; then
     OLLAMA_MODEL_VALUE="gemma3:27b-cloud"
   fi
+}
+
+apply_polish_wake_defaults() {
+  WAKE_WORD_END_KEYWORDS_VALUE="koniec,dziekuje,to wszystko,do widzenia,stop"
+  if [ "${WAKE_WORD_ENGINE}" = "openwakeword" ]; then
+    WAKE_WORD_THRESHOLD="0.55"
+    WAKE_WORD_COOLDOWN_SEC="2.0"
+    WAKE_WORD_VAD_THRESHOLD="0.25"
+    WAKE_WORD_ENABLE_SPEEX="true"
+  elif [ "${WAKE_WORD_ENGINE}" = "local-wake" ]; then
+    WAKE_WORD_THRESHOLD="0.14"
+    WAKE_WORD_BUFFER_SIZE="1.8"
+    WAKE_WORD_SLIDE_SIZE="0.25"
+  fi
+}
+
+download_openwakeword_models() {
+  local models_csv="$1"
+
+  if [ -z "${models_csv}" ]; then
+    return 0
+  fi
+
+  log "Pre-downloading openWakeWord models: ${models_csv}"
+  OWW_MODELS="${models_csv}" python3 - <<'PY'
+import os
+
+from openwakeword.utils import download_models
+
+models = [item.strip() for item in os.environ.get("OWW_MODELS", "").split(",") if item.strip()]
+if not models:
+    raise SystemExit(0)
+
+download_models(model_names=models)
+PY
 }
 
 pick_pi_memory_tuning() {
@@ -1346,6 +1394,11 @@ pick_wake_word_config() {
   case "${choice}" in
     1)
       WAKE_WORD_ENGINE="openwakeword"
+      WAKE_WORD_END_KEYWORDS_VALUE="byebye,goodbye,stop"
+      WAKE_WORD_THRESHOLD="0.45"
+      WAKE_WORD_COOLDOWN_SEC="1.5"
+      WAKE_WORD_VAD_THRESHOLD="0.2"
+      WAKE_WORD_ENABLE_SPEEX="true"
       local oww_choice
       oww_choice=$(choose_from_menu \
         "Select the English preset wake word" \
@@ -1361,34 +1414,81 @@ pick_wake_word_config() {
         4) WAKE_WORD_OPENWAKEWORD_MODEL="alexa" ;;
         *) die "Invalid openWakeWord choice" ;;
       esac
-      WAKE_WORD_THRESHOLD=$(prompt_value "openWakeWord confidence threshold" "0.45")
-      WAKE_WORD_VAD_THRESHOLD=$(prompt_value "openWakeWord VAD threshold" "0.2")
+      if [ "${ASR_LANGUAGE}" = "pl" ]; then
+        print_note "Polish profile: using stricter openWakeWord defaults to reduce false triggers with an English preset model."
+        apply_polish_wake_defaults
+      fi
+      WAKE_WORD_THRESHOLD=$(prompt_value "openWakeWord confidence threshold" "${WAKE_WORD_THRESHOLD}")
+      WAKE_WORD_COOLDOWN_SEC=$(prompt_value "openWakeWord cooldown in seconds" "${WAKE_WORD_COOLDOWN_SEC}")
+      WAKE_WORD_VAD_THRESHOLD=$(prompt_value "openWakeWord VAD threshold" "${WAKE_WORD_VAD_THRESHOLD}")
       if prompt_yes_no "Enable Speex noise suppression for openWakeWord" "y"; then
         WAKE_WORD_ENABLE_SPEEX="true"
       else
         WAKE_WORD_ENABLE_SPEEX="false"
       fi
+      if prompt_yes_no "Pre-download the openWakeWord preset model during install for offline first boot" "y"; then
+        DOWNLOAD_OPENWAKEWORD_MODEL=true
+      fi
       ;;
     2)
       WAKE_WORD_ENGINE="local-wake"
+      WAKE_WORD_END_KEYWORDS_VALUE="byebye,goodbye,stop"
+      WAKE_WORD_THRESHOLD="0.16"
+      WAKE_WORD_BUFFER_SIZE="1.8"
+      WAKE_WORD_SLIDE_SIZE="0.25"
       local phrase_choice
-      phrase_choice=$(choose_from_menu \
-        "Select the wake phrase label" \
-        "1" \
-        "1|hey whisplay" \
-        "2|hello assistant" \
-        "3|computer" \
-        "4|custom phrase")
+      if [ "${ASR_LANGUAGE}" = "pl" ]; then
+        apply_polish_wake_defaults
+        phrase_choice=$(choose_from_menu \
+          "Select the wake phrase label" \
+          "1" \
+          "1|czesc whisplay" \
+          "2|hej asystencie" \
+          "3|komputer" \
+          "4|custom phrase")
+      else
+        phrase_choice=$(choose_from_menu \
+          "Select the wake phrase label" \
+          "1" \
+          "1|hey whisplay" \
+          "2|hello assistant" \
+          "3|computer" \
+          "4|custom phrase")
+      fi
       case "${phrase_choice}" in
-        1) WAKE_WORD_PHRASE="hey whisplay" ;;
-        2) WAKE_WORD_PHRASE="hello assistant" ;;
-        3) WAKE_WORD_PHRASE="computer" ;;
-        4) WAKE_WORD_PHRASE=$(prompt_value "Enter custom wake phrase" "hey whisplay") ;;
+        1)
+          if [ "${ASR_LANGUAGE}" = "pl" ]; then
+            WAKE_WORD_PHRASE="czesc whisplay"
+          else
+            WAKE_WORD_PHRASE="hey whisplay"
+          fi
+          ;;
+        2)
+          if [ "${ASR_LANGUAGE}" = "pl" ]; then
+            WAKE_WORD_PHRASE="hej asystencie"
+          else
+            WAKE_WORD_PHRASE="hello assistant"
+          fi
+          ;;
+        3)
+          if [ "${ASR_LANGUAGE}" = "pl" ]; then
+            WAKE_WORD_PHRASE="komputer"
+          else
+            WAKE_WORD_PHRASE="computer"
+          fi
+          ;;
+        4)
+          if [ "${ASR_LANGUAGE}" = "pl" ]; then
+            WAKE_WORD_PHRASE=$(prompt_value "Enter custom wake phrase" "czesc whisplay")
+          else
+            WAKE_WORD_PHRASE=$(prompt_value "Enter custom wake phrase" "hey whisplay")
+          fi
+          ;;
         *) die "Invalid wake phrase choice" ;;
       esac
-      WAKE_WORD_THRESHOLD=$(prompt_value "local-wake distance threshold (lower is stricter)" "0.16")
-      WAKE_WORD_BUFFER_SIZE=$(prompt_value "local-wake buffer size (seconds)" "1.8")
-      WAKE_WORD_SLIDE_SIZE=$(prompt_value "local-wake slide size (seconds)" "0.25")
+      WAKE_WORD_THRESHOLD=$(prompt_value "local-wake distance threshold (lower is stricter)" "${WAKE_WORD_THRESHOLD}")
+      WAKE_WORD_BUFFER_SIZE=$(prompt_value "local-wake buffer size (seconds)" "${WAKE_WORD_BUFFER_SIZE}")
+      WAKE_WORD_SLIDE_SIZE=$(prompt_value "local-wake slide size (seconds)" "${WAKE_WORD_SLIDE_SIZE}")
       WAKE_WORD_SAMPLE_COUNT=$(prompt_value "Number of reference recordings" "4")
       WAKE_WORD_SAMPLE_DURATION=$(prompt_value "Duration of each reference recording (seconds, whole numbers work best)" "3")
       WAKE_WORD_REFERENCE_DIR="${PROJECT_ROOT}/data/wakewords/$(slugify "${WAKE_WORD_PHRASE}")"
@@ -1575,6 +1675,7 @@ if [ "${INSTALL_WAKE_WORD}" = true ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_ENABLED" "true"
   set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_ENGINE" "${WAKE_WORD_ENGINE}"
   set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_THRESHOLD" "${WAKE_WORD_THRESHOLD}"
+  set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_END_KEYWORDS" "${WAKE_WORD_END_KEYWORDS_VALUE}"
   if [ "${WAKE_WORD_ENGINE}" = "local-wake" ]; then
     set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_PHRASE" "${WAKE_WORD_PHRASE}"
     set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_REFERENCE_DIR" "${WAKE_WORD_REFERENCE_DIR}"
@@ -1582,6 +1683,7 @@ if [ "${INSTALL_WAKE_WORD}" = true ]; then
     set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_LOCAL_WAKE_SLIDE_SIZE" "${WAKE_WORD_SLIDE_SIZE}"
   else
     set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORDS" "${WAKE_WORD_OPENWAKEWORD_MODEL}"
+    set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_COOLDOWN_SEC" "${WAKE_WORD_COOLDOWN_SEC}"
     set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_VAD_THRESHOLD" "${WAKE_WORD_VAD_THRESHOLD:-0.2}"
     set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_ENABLE_SPEEX" "${WAKE_WORD_ENABLE_SPEEX:-true}"
   fi
@@ -1635,6 +1737,12 @@ if [ "${INSTALL_WAKE_WORD}" = true ]; then
     install_local_wake_runtime
   else
     install_openwakeword_runtime
+  fi
+fi
+
+if [ "${DOWNLOAD_OPENWAKEWORD_MODEL}" = true ] && [ "${WAKE_WORD_ENGINE}" = "openwakeword" ]; then
+  if ! download_openwakeword_models "${WAKE_WORD_OPENWAKEWORD_MODEL}"; then
+    warn "Skipping openWakeWord model pre-download. Wake word can still work later once the model is downloaded on first run."
   fi
 fi
 
