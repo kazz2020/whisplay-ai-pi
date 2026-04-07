@@ -662,12 +662,12 @@ choose_from_menu() {
   local default_value="$2"
   shift 2
 
-  print_section "${title}"
+  print_section "${title}" >&2
   local entry key label choices=""
   for entry in "$@"; do
     key="${entry%%|*}"
     label="${entry#*|}"
-    printf '  %s[%s]%s %s\n' "${COLOR_GREEN}" "${key}" "${COLOR_RESET}" "${label}"
+    printf '  %s[%s]%s %s\n' "${COLOR_GREEN}" "${key}" "${COLOR_RESET}" "${label}" >&2
     if [ -n "${choices}" ]; then
       choices="${choices}, ${key}"
     else
