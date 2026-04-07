@@ -31,6 +31,7 @@ export enum LLMServer {
   openai = "openai",
   llamacpp = "llama.cpp",
   ollama = "ollama",
+  ollamacloud = "ollama-cloud",
   gemini = "gemini",
   grok = "grok",
   anthropic = "anthropic",

@@ -109,6 +109,28 @@ To re-record local wake phrase samples later, run:
 bash scripts/setup_local_wakeword.sh
 ```
 
+The Pi 5 installer now also includes an `Ollama Cloud` brain option. If you choose it, the installer prompts for `OLLAMA_API_KEY` and writes the cloud model settings into `.env` automatically.
+
+## Ollama Cloud on Pi 5
+
+If you want the Pi 5 device experience but do not want to run the LLM locally, you can use Ollama Cloud with the built-in Ollama provider. This keeps ASR, TTS, button handling, display, and device control on the Pi, while the text generation runs remotely.
+
+Example `.env` settings for Google Gemma 3 27B Cloud:
+
+```bash
+LLM_SERVER=ollama-cloud
+OLLAMA_ENDPOINT=https://ollama.com
+OLLAMA_MODEL=gemma3:27b-cloud
+OLLAMA_API_KEY=your_ollama_api_key
+```
+
+Notes:
+
+- The code calls the standard Ollama API path (`/api/chat`, `/api/generate`), so cloud usage relies on the same Ollama-compatible protocol as local Ollama.
+- This is a good fit for Raspberry Pi 5 because the Pi does not need enough RAM or GPU to host a 27B model locally.
+- End-to-end latency will depend on Wi-Fi quality and Ollama Cloud response time, so it will feel less instant than a small local model.
+- If you want vision through Ollama too, set `VISION_SERVER=ollama` and optionally `OLLAMA_VISION_MODEL=gemma3:27b-cloud` if that model path is enabled for your account.
+
 ## Build After Code Changes
 
 If you make changes to the node code or just pull the new code from this repository, you need to rebuild the project. You can do this by running:

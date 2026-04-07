@@ -1,10 +1,10 @@
-# Raspberry Pi 5 8GB Local Assistant
+# Raspberry Pi 5 8GB Assistant
 
-This repo now supports a fully local Raspberry Pi 5 setup for the Whisplay HAT:
+This repo now supports both a fully local Raspberry Pi 5 setup and a Pi-hosted assistant with Ollama Cloud for the LLM:
 
 - Whisplay HAT drivers from PiSugar Whisplay
 - Local ASR with faster-whisper
-- Local LLM with llama.cpp `llama-server`
+- Local LLM with llama.cpp `llama-server` or remote LLM with Ollama Cloud
 - Local TTS with Piper HTTP
 - Image generation disabled by default so the preset stays fully local
 - Optional systemd startup via the existing chatbot service
@@ -40,14 +40,19 @@ The installer now offers these Pi-oriented brain profiles:
 - `Balanced`: Qwen2.5 1.5B, best default on Pi 5 8GB
 - `Higher quality`: Gemma 2 2B, slower but a bit stronger
 - `Custom`: manual Hugging Face GGUF repo entry
+- `Ollama Cloud`: `gemma3:27b-cloud`, prompts for `OLLAMA_API_KEY`
 
 When you choose a brain profile, the installer also writes matching defaults for threads, context size, batch size, ubatch size, and chat history length into `.env`.
 
+<<<<<<< HEAD
 The installer also now lets you choose the LLM runtime mode:
 
 - `Local llama.cpp on the Pi`: fully offline
 - `Ollama on another computer in your LAN`: free and no API key, but needs another machine
 - `DeepSeek API via OpenAI-compatible endpoint`: online mode for users who already have a DeepSeek key
+=======
+When you choose `Ollama Cloud`, the installer instead writes `LLM_SERVER=ollama-cloud`, `OLLAMA_ENDPOINT`, `OLLAMA_MODEL`, and `OLLAMA_API_KEY` into `.env`, and skips local llama.cpp setup.
+>>>>>>> 9d61f47 (ollama cloud added)
 
 The voice selection also sets matching local-language defaults:
 

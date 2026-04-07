@@ -22,7 +22,7 @@ import {
   extractToolResponse,
   stimulateStreamResponse,
 } from "../../config/common";
-import { defaultPortMap } from "./common";
+import { defaultPortMap, getOllamaHeaders } from "./common";
 import {
   consumePendingCapturedImgForChat,
   hasPendingCapturedImgForChat,
@@ -164,6 +164,7 @@ const chatWithLLMStream: ChatWithLLMStreamFunction = async (
       {
         headers: {
           "Content-Type": "application/json",
+          ...getOllamaHeaders(),
         },
         responseType: "stream",
       },
@@ -317,7 +318,10 @@ const summaryTextWithLLM: SummaryTextWithLLMFunction = async (
       prompt: prompt,
       stream: false,
       think: false,
-    }
+    },
+    {
+      headers: getOllamaHeaders(),
+    },
   );
 
   if (response.data && response.data.response) {

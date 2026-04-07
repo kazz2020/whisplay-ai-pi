@@ -1,5 +1,6 @@
 import axios from "axios";
 import dotenv from "dotenv";
+import { getOllamaHeaders } from "./common";
 
 dotenv.config();
 
@@ -11,11 +12,17 @@ const envEnableRAG = (process.env.ENABLE_RAG || "false").toLowerCase() === "true
 
 if (envEnableRAG && embeddingServer === "ollama") {
   // wake request to prevent cold start
-  axios.post(`${ollamaEndpoint}/api/embed`, {
-    model: ollamaEmbeddingModel,
-    input: "wake up",
-    keep_alive: -1,
-  })
+  axios.post(
+    `${ollamaEndpoint}/api/embed`,
+    {
+      model: ollamaEmbeddingModel,
+      input: "wake up",
+      keep_alive: -1,
+    },
+    {
+      headers: getOllamaHeaders(),
+    },
+  )
   .then((res) => {
     console.log('[embedding wake request]', res.data);
   })
@@ -26,11 +33,17 @@ if (envEnableRAG && embeddingServer === "ollama") {
 
 export const embedText = async (text: string): Promise<number[]> => {
   try {
-    const response = await axios.post(`${ollamaEndpoint}/api/embed`, {
-      model: ollamaEmbeddingModel,
-      input: text,
-      keep_alive: -1,
-    });
+    const response = await axios.post(
+      `${ollamaEndpoint}/api/embed`,
+      {
+        model: ollamaEmbeddingModel,
+        input: text,
+        keep_alive: -1,
+      },
+      {
+        headers: getOllamaHeaders(),
+      },
+    );
 
     if (
       response.data &&

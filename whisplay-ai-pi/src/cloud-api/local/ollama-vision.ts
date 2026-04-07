@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import { getLatestShowedImage, showLatestCapturedImg } from "../../utils/image";
 import { get } from "lodash";
 import { readFileSync } from "fs";
-import { defaultPortMap } from "./common";
+import { defaultPortMap, getOllamaHeaders } from "./common";
 
 dotenv.config();
 
@@ -37,18 +37,24 @@ export const addOllamaVisionTool = (visionTools: LLMTool[]) => {
         return `${ToolReturnTag.Error} No image is found.`;
       }
       const fileData = readFileSync(imgPath).toString("base64");
-      const response = await axios.post(`${ollamaEndpoint}/api/chat`, {
-        model: ollamaVisionModel,
-        messages: [
-          {
-            role: "user",
-            content: `${prompt} Respond no more than 100 words.`,
-            images: [fileData],
-          },
-        ],
-        think: false,
-        stream: false,
-      });
+      const response = await axios.post(
+        `${ollamaEndpoint}/api/chat`,
+        {
+          model: ollamaVisionModel,
+          messages: [
+            {
+              role: "user",
+              content: `${prompt} Respond no more than 100 words.`,
+              images: [fileData],
+            },
+          ],
+          think: false,
+          stream: false,
+        },
+        {
+          headers: getOllamaHeaders(),
+        },
+      );
       const content = get(response.data, "message.content", "");
       return (
         `${ToolReturnTag.Response}${content}` ||

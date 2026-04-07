@@ -67,6 +67,22 @@ export function registerLLMPlugins(): void {
   } as LLMPlugin);
 
   pluginRegistry.register({
+    name: "ollama-cloud",
+    displayName: "Ollama Cloud LLM",
+    version: "1.0.0",
+    type: "llm",
+    description: "Ollama cloud large language model via ollama.com API",
+    activate: () => {
+      const mod = require("../../cloud-api/local/ollama-llm").default;
+      return {
+        chatWithLLMStream: mod.chatWithLLMStream,
+        resetChatHistory: mod.resetChatHistory,
+        summaryTextWithLLM: mod.summaryTextWithLLM,
+      };
+    },
+  } as LLMPlugin);
+
+  pluginRegistry.register({
     name: "gemini",
     displayName: "Gemini LLM",
     version: "1.0.0",

@@ -77,6 +77,7 @@ prompt_required_value() {
       printf '%s\n' "${reply}"
       return 0
     fi
+
     warn "A value is required for this option."
   done
 }
@@ -114,6 +115,7 @@ except Exception:
 print(value)
 PY
 }
+
 
 set_env_value() {
   local file="$1"
@@ -539,11 +541,13 @@ pick_llm_repo() {
   echo "  2. Balanced: Qwen2.5 1.5B Instruct Q4_K_M (recommended)"
   echo "  3. Higher quality: Gemma 2 2B Instruct Q4_K_M"
   echo "  4. Custom Hugging Face GGUF repo"
+  echo "  5. Ollama Cloud: gemma3:27b-cloud"
   local choice
   read -r -p "Choice [2] " choice
   choice="${choice:-2}"
   case "${choice}" in
     1)
+      LLM_PROVIDER="llama.cpp"
       BRAIN_PROFILE_NAME="fast"
       BRAIN_PROFILE_LABEL="Fast"
       LLAMA_HF_REPO="bartowski/Qwen2.5-0.5B-Instruct-GGUF:Q4_K_M"
@@ -555,6 +559,7 @@ pick_llm_repo() {
       BRAIN_MAX_MESSAGES_DEFAULT="10"
       ;;
     2)
+      LLM_PROVIDER="llama.cpp"
       BRAIN_PROFILE_NAME="balanced"
       BRAIN_PROFILE_LABEL="Balanced"
       LLAMA_HF_REPO="bartowski/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M"
@@ -566,6 +571,7 @@ pick_llm_repo() {
       BRAIN_MAX_MESSAGES_DEFAULT="12"
       ;;
     3)
+      LLM_PROVIDER="llama.cpp"
       BRAIN_PROFILE_NAME="quality"
       BRAIN_PROFILE_LABEL="Higher quality"
       LLAMA_HF_REPO="bartowski/gemma-2-2b-it-GGUF:Q4_K_M"
@@ -577,6 +583,7 @@ pick_llm_repo() {
       BRAIN_MAX_MESSAGES_DEFAULT="8"
       ;;
     4)
+      LLM_PROVIDER="llama.cpp"
       BRAIN_PROFILE_NAME="custom"
       BRAIN_PROFILE_LABEL="Custom"
       LLAMA_HF_REPO=$(prompt_value "Enter custom llama.cpp HF repo[:quant]" "bartowski/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M")
@@ -586,6 +593,12 @@ pick_llm_repo() {
       BRAIN_BATCH_DEFAULT="256"
       BRAIN_UBATCH_DEFAULT="128"
       BRAIN_MAX_MESSAGES_DEFAULT="12"
+      ;;
+    5)
+      LLM_PROVIDER="ollama-cloud"
+      BRAIN_PROFILE_NAME="ollama-cloud"
+      BRAIN_PROFILE_LABEL="Ollama Cloud"
+      OLLAMA_MODEL_VALUE="gemma3:27b-cloud"
       ;;
     *)
       die "Invalid model choice"
@@ -863,11 +876,23 @@ if [ "${INSTALL_WAKE_WORD}" = true ]; then
   pick_wake_word_config
 fi
 
+if [ "${LLM_PROVIDER}" = "ollama-cloud" ]; then
+  OLLAMA_MODEL_VALUE=$(prompt_value "Enter Ollama Cloud model" "${OLLAMA_MODEL_VALUE}")
+  OLLAMA_ENDPOINT_VALUE=$(prompt_value "Enter Ollama API endpoint" "${OLLAMA_ENDPOINT_VALUE}")
+  OLLAMA_API_KEY_VALUE=$(prompt_required_value "Enter OLLAMA_API_KEY")
+  if [ "${INSTALL_LLAMA_CPP}" = true ] || [ "${DOWNLOAD_LLM_MODEL}" = true ]; then
+    warn "Cloud brain selected; skipping llama.cpp install and local LLM pre-download choices."
+  fi
+  INSTALL_LLAMA_CPP=false
+  DOWNLOAD_LLM_MODEL=false
+fi
+
 log "Selected brain profile: ${BRAIN_PROFILE_LABEL}"
 if [ "${LLM_SERVER_SELECTION}" = "ollama" ]; then
   log "LLM mode: Ollama on LAN (${OLLAMA_ENDPOINT_VALUE}, model ${OLLAMA_MODEL_VALUE})"
 elif [ "${LLM_SERVER_SELECTION}" = "openai" ]; then
   log "LLM mode: online OpenAI-compatible endpoint (${OPENAI_API_BASE_URL_VALUE}, model ${OPENAI_LLM_MODEL_VALUE})"
+
 else
   log "Brain model: ${LLAMA_HF_REPO}"
 fi
@@ -875,8 +900,8 @@ fi
 CHATBOT_ENV_TEMPLATE="${PROJECT_ROOT}/.env.pi5-local.template"
 CHATBOT_ENV_FILE="${PROJECT_ROOT}/.env"
 DRIVER_DIR=$(prompt_value "Whisplay driver repo directory" "${PREFERRED_DRIVER_DIR}")
-LLAMA_DIR=$(prompt_value "llama.cpp repo directory" "${PREFERRED_LLAMA_DIR}")
 PIPER_DIR=$(prompt_value "Piper model directory" "${DEFAULT_PIPER_DIR}")
+
 CHATBOT_THREADS="${BRAIN_THREADS_DEFAULT:-4}"
 CHATBOT_CONTEXT="${BRAIN_CONTEXT_DEFAULT:-2048}"
 CHATBOT_BATCH="${BRAIN_BATCH_DEFAULT:-256}"
@@ -889,6 +914,7 @@ if [ "${LLM_SERVER_SELECTION}" = "llama.cpp" ]; then
   CHATBOT_UBATCH=$(prompt_value "llama.cpp ubatch size" "${CHATBOT_UBATCH}")
 fi
 CHATBOT_MAX_MESSAGES=$(prompt_value "chat history message limit" "${CHATBOT_MAX_MESSAGES}")
+
 
 if [ ! -f "${CHATBOT_ENV_TEMPLATE}" ]; then
   die "Missing ${CHATBOT_ENV_TEMPLATE}"
@@ -921,6 +947,7 @@ if [ "${LLM_SERVER_SELECTION}" = "llama.cpp" ]; then
 fi
 set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_MAX_MESSAGES_LENGTH" "${CHATBOT_MAX_MESSAGES}"
 set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_ENABLE_TOOLS" "false"
+
 set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_MODEL_SIZE_OR_PATH" "${ASR_MODEL}"
 set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_LANGUAGE" "${ASR_LANGUAGE}"
 set_env_value "${CHATBOT_ENV_FILE}" "PIPER_HTTP_MODEL" "${PIPER_DIR}/${PIPER_VOICE}"
@@ -952,6 +979,24 @@ if [ "${INSTALL_WAKE_WORD}" = true ]; then
   fi
 else
   set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_ENABLED" "false"
+fi
+
+if [ "${LLM_PROVIDER}" = "ollama-cloud" ]; then
+  set_env_value "${CHATBOT_ENV_FILE}" "LLM_SERVER" "ollama-cloud"
+  set_env_value "${CHATBOT_ENV_FILE}" "OLLAMA_ENDPOINT" "${OLLAMA_ENDPOINT_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "OLLAMA_MODEL" "${OLLAMA_MODEL_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "OLLAMA_API_KEY" "${OLLAMA_API_KEY_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "SERVE_LLAMA_CPP" "false"
+else
+  set_env_value "${CHATBOT_ENV_FILE}" "LLM_SERVER" "llama.cpp"
+  set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_HF_REPO" "${LLAMA_HF_REPO}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_MODEL" "${LLAMA_ALIAS}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_ALIAS" "${LLAMA_ALIAS}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_THREADS" "${CHATBOT_THREADS}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_CONTEXT_SIZE" "${CHATBOT_CONTEXT}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_BATCH_SIZE" "${CHATBOT_BATCH}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_UBATCH_SIZE" "${CHATBOT_UBATCH}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_MAX_MESSAGES_LENGTH" "${CHATBOT_MAX_MESSAGES}"
 fi
 
 if [ "${INSTALL_DRIVER}" = true ]; then

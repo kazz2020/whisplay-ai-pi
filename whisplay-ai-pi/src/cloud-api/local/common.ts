@@ -12,3 +12,13 @@ export enum defaultPortMap {
   hailoWhisper = 8807,
   hailoVlm = 8808,
 }
+
+export const getOllamaHeaders = (): Record<string, string> => {
+  const apiKey = process.env.OLLAMA_API_KEY?.trim();
+
+  return apiKey
+    ? {
+        Authorization: `Bearer ${apiKey}`,
+      }
+    : {};
+};
