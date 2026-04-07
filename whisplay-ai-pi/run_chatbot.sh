@@ -172,6 +172,12 @@ if [ -f ".env" ]; then
   FASTER_WHISPER_MODEL_SIZE=$(get_env_value "FASTER_WHISPER_MODEL_SIZE")
   [ -n "$FASTER_WHISPER_MODEL_SIZE" ] && export FASTER_WHISPER_MODEL_SIZE
 
+  MALLOC_ARENA_MAX=$(get_env_value "MALLOC_ARENA_MAX")
+  [ -n "$MALLOC_ARENA_MAX" ] && export MALLOC_ARENA_MAX
+
+  MALLOC_TRIM_THRESHOLD_=$(get_env_value "MALLOC_TRIM_THRESHOLD_")
+  [ -n "$MALLOC_TRIM_THRESHOLD_" ] && export MALLOC_TRIM_THRESHOLD_
+
   echo ".env variables loaded."
 
   # check if SERVE_OLLAMA is set to true
@@ -194,6 +200,11 @@ else
   echo ".env file not found, please create one based on .env.template."
   exit 1
 fi
+
+: "${MALLOC_ARENA_MAX:=2}"
+: "${MALLOC_TRIM_THRESHOLD_:=131072}"
+export MALLOC_ARENA_MAX
+export MALLOC_TRIM_THRESHOLD_
 
 # Adjust initial volume (Linux only)
 if [ "$audio_supported" = true ]; then

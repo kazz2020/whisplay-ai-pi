@@ -38,10 +38,16 @@ DOWNLOAD_OLLAMA_EMBEDDING_MODEL=false
 NATIVE_OLLAMA_FOR_EMBEDDINGS=false
 APPLY_PI_MEMORY_TUNING=false
 PI_MEMORY_PROFILE_LABEL="disabled"
+PI_MEMORY_MODE_VALUE="balanced"
 PI_ZRAM_PERCENT_VALUE="50"
 PI_ZRAM_ALGO_VALUE="lz4"
 PI_DISK_SWAP_MB_VALUE="1024"
 PI_SWAPPINESS_VALUE="100"
+PI_VFS_CACHE_PRESSURE_VALUE="150"
+PI_DIRTY_BACKGROUND_RATIO_VALUE="2"
+PI_DIRTY_RATIO_VALUE="10"
+RUNTIME_MALLOC_ARENA_MAX_VALUE="2"
+RUNTIME_MALLOC_TRIM_THRESHOLD_VALUE="131072"
 QDRANT_HOST_VALUE="http://127.0.0.1:6333"
 OLLAMA_EMBEDDING_ENDPOINT_VALUE="http://192.168.1.100:11434"
 OLLAMA_EMBEDDING_MODEL_VALUE="nomic-embed-text"
@@ -212,8 +218,11 @@ print_final_review() {
   print_review_item "Chat history limit" "${CHATBOT_MAX_MESSAGES}"
   print_review_item "Pi memory tuning" "${PI_MEMORY_PROFILE_LABEL}"
   if [ "${APPLY_PI_MEMORY_TUNING}" = true ]; then
+    print_review_item "Memory mode" "${PI_MEMORY_MODE_VALUE}"
     print_review_item "ZRAM / swap" "${PI_ZRAM_PERCENT_VALUE}% / ${PI_DISK_SWAP_MB_VALUE} MB"
     print_review_item "Swappiness" "${PI_SWAPPINESS_VALUE}"
+    print_review_item "Cache / dirty" "${PI_VFS_CACHE_PRESSURE_VALUE} / ${PI_DIRTY_BACKGROUND_RATIO_VALUE}-${PI_DIRTY_RATIO_VALUE}"
+    print_review_item "Allocator tuning" "arena=${RUNTIME_MALLOC_ARENA_MAX_VALUE} trim=${RUNTIME_MALLOC_TRIM_THRESHOLD_VALUE}"
   fi
   print_review_item "Driver repo dir" "${DRIVER_DIR}"
   print_review_item "Env template" "${CHATBOT_ENV_TEMPLATE}"
@@ -282,10 +291,16 @@ reset_install_choices() {
   NATIVE_OLLAMA_FOR_EMBEDDINGS=false
   APPLY_PI_MEMORY_TUNING=false
   PI_MEMORY_PROFILE_LABEL="disabled"
+  PI_MEMORY_MODE_VALUE="balanced"
   PI_ZRAM_PERCENT_VALUE="50"
   PI_ZRAM_ALGO_VALUE="lz4"
   PI_DISK_SWAP_MB_VALUE="1024"
   PI_SWAPPINESS_VALUE="100"
+  PI_VFS_CACHE_PRESSURE_VALUE="150"
+  PI_DIRTY_BACKGROUND_RATIO_VALUE="2"
+  PI_DIRTY_RATIO_VALUE="10"
+  RUNTIME_MALLOC_ARENA_MAX_VALUE="2"
+  RUNTIME_MALLOC_TRIM_THRESHOLD_VALUE="131072"
   QDRANT_HOST_VALUE="http://127.0.0.1:6333"
   OLLAMA_EMBEDDING_ENDPOINT_VALUE="http://192.168.1.100:11434"
   OLLAMA_EMBEDDING_MODEL_VALUE="nomic-embed-text"
@@ -563,6 +578,8 @@ PY
 }
 
 pick_pi_memory_tuning() {
+  local profile_choice
+
   if ! prompt_yes_no "Apply Raspberry Pi 5 memory tuning for smoother ASR and indexing" "y"; then
     APPLY_PI_MEMORY_TUNING=false
     PI_MEMORY_PROFILE_LABEL="disabled"
@@ -570,18 +587,68 @@ pick_pi_memory_tuning() {
   fi
 
   APPLY_PI_MEMORY_TUNING=true
-  PI_MEMORY_PROFILE_LABEL="zram + small disk swap"
+  profile_choice=$(choose_from_menu \
+    "Select the Pi memory tuning mode" \
+    "1" \
+    "1|Balanced: safer everyday tuning for Pi 5 8GB" \
+    "2|Aggressive: more compressed memory and larger fallback swap" \
+    "3|Custom values")
+
+  case "${profile_choice}" in
+    1)
+      PI_MEMORY_MODE_VALUE="balanced"
+      PI_MEMORY_PROFILE_LABEL="balanced zram + swap"
+      PI_ZRAM_PERCENT_VALUE="50"
+      PI_ZRAM_ALGO_VALUE="lz4"
+      PI_DISK_SWAP_MB_VALUE="1024"
+      PI_SWAPPINESS_VALUE="100"
+      PI_VFS_CACHE_PRESSURE_VALUE="150"
+      PI_DIRTY_BACKGROUND_RATIO_VALUE="2"
+      PI_DIRTY_RATIO_VALUE="10"
+      RUNTIME_MALLOC_ARENA_MAX_VALUE="2"
+      RUNTIME_MALLOC_TRIM_THRESHOLD_VALUE="131072"
+      ;;
+    2)
+      PI_MEMORY_MODE_VALUE="aggressive"
+      PI_MEMORY_PROFILE_LABEL="aggressive zram + larger swap"
+      PI_ZRAM_PERCENT_VALUE="75"
+      PI_ZRAM_ALGO_VALUE="lz4"
+      PI_DISK_SWAP_MB_VALUE="2048"
+      PI_SWAPPINESS_VALUE="120"
+      PI_VFS_CACHE_PRESSURE_VALUE="200"
+      PI_DIRTY_BACKGROUND_RATIO_VALUE="1"
+      PI_DIRTY_RATIO_VALUE="6"
+      RUNTIME_MALLOC_ARENA_MAX_VALUE="2"
+      RUNTIME_MALLOC_TRIM_THRESHOLD_VALUE="65536"
+      ;;
+    3)
+      PI_MEMORY_MODE_VALUE="custom"
+      PI_MEMORY_PROFILE_LABEL="custom zram + swap"
+      ;;
+    *) die "Invalid Pi memory tuning mode" ;;
+  esac
 
   if [ "${ASR_LANGUAGE}" = "pl" ]; then
-    PI_ZRAM_PERCENT_VALUE="50"
-    PI_DISK_SWAP_MB_VALUE="1024"
-    PI_SWAPPINESS_VALUE="100"
+    if [ "${PI_MEMORY_MODE_VALUE}" = "balanced" ]; then
+      PI_ZRAM_PERCENT_VALUE="55"
+      PI_DISK_SWAP_MB_VALUE="1536"
+      PI_SWAPPINESS_VALUE="110"
+    elif [ "${PI_MEMORY_MODE_VALUE}" = "aggressive" ]; then
+      PI_ZRAM_PERCENT_VALUE="80"
+      PI_DISK_SWAP_MB_VALUE="3072"
+      PI_SWAPPINESS_VALUE="140"
+    fi
   fi
 
   PI_ZRAM_PERCENT_VALUE=$(prompt_value "ZRAM percent of RAM" "${PI_ZRAM_PERCENT_VALUE}")
   PI_ZRAM_ALGO_VALUE=$(prompt_value "ZRAM compression algorithm" "${PI_ZRAM_ALGO_VALUE}")
   PI_DISK_SWAP_MB_VALUE=$(prompt_value "Disk swap size in MB" "${PI_DISK_SWAP_MB_VALUE}")
   PI_SWAPPINESS_VALUE=$(prompt_value "Linux swappiness" "${PI_SWAPPINESS_VALUE}")
+  PI_VFS_CACHE_PRESSURE_VALUE=$(prompt_value "Linux vfs_cache_pressure" "${PI_VFS_CACHE_PRESSURE_VALUE}")
+  PI_DIRTY_BACKGROUND_RATIO_VALUE=$(prompt_value "vm.dirty_background_ratio" "${PI_DIRTY_BACKGROUND_RATIO_VALUE}")
+  PI_DIRTY_RATIO_VALUE=$(prompt_value "vm.dirty_ratio" "${PI_DIRTY_RATIO_VALUE}")
+  RUNTIME_MALLOC_ARENA_MAX_VALUE=$(prompt_value "Runtime MALLOC_ARENA_MAX" "${RUNTIME_MALLOC_ARENA_MAX_VALUE}")
+  RUNTIME_MALLOC_TRIM_THRESHOLD_VALUE=$(prompt_value "Runtime MALLOC_TRIM_THRESHOLD_" "${RUNTIME_MALLOC_TRIM_THRESHOLD_VALUE}")
 }
 
 print_intro() {
@@ -1871,6 +1938,10 @@ fi
 set_env_value "${CHATBOT_ENV_FILE}" "SYSTEM_PROMPT" "${ASSISTANT_SYSTEM_PROMPT}"
 set_env_value "${CHATBOT_ENV_FILE}" "ENABLE_THINKING" "${ENABLE_THINKING_VALUE}"
 set_env_value "${CHATBOT_ENV_FILE}" "USE_CAPTURED_IMAGE_IN_CHAT" "${USE_CAPTURED_IMAGE_IN_CHAT_VALUE}"
+if [ "${APPLY_PI_MEMORY_TUNING}" = true ]; then
+  set_env_value "${CHATBOT_ENV_FILE}" "MALLOC_ARENA_MAX" "${RUNTIME_MALLOC_ARENA_MAX_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "MALLOC_TRIM_THRESHOLD_" "${RUNTIME_MALLOC_TRIM_THRESHOLD_VALUE}"
+fi
 set_env_value "${CHATBOT_ENV_FILE}" "ENABLE_RAG" "${ENABLE_RAG_VALUE}"
 if [ "${ENABLE_RAG_VALUE}" = "true" ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "EMBEDDING_SERVER" "${EMBEDDING_SERVER_VALUE}"
@@ -2002,6 +2073,11 @@ if [ "${APPLY_PI_MEMORY_TUNING}" = true ]; then
     ZRAM_ALGO="${PI_ZRAM_ALGO_VALUE}" \
     DISK_SWAP_MB="${PI_DISK_SWAP_MB_VALUE}" \
     SWAPPINESS="${PI_SWAPPINESS_VALUE}" \
+    VFS_CACHE_PRESSURE="${PI_VFS_CACHE_PRESSURE_VALUE}" \
+    DIRTY_BACKGROUND_RATIO="${PI_DIRTY_BACKGROUND_RATIO_VALUE}" \
+    DIRTY_RATIO="${PI_DIRTY_RATIO_VALUE}" \
+    RUNTIME_MALLOC_ARENA_MAX="${RUNTIME_MALLOC_ARENA_MAX_VALUE}" \
+    RUNTIME_MALLOC_TRIM_THRESHOLD="${RUNTIME_MALLOC_TRIM_THRESHOLD_VALUE}" \
     bash "${PROJECT_ROOT}/scripts/optimize_pi_memory.sh"
 fi
 

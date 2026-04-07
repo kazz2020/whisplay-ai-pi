@@ -10,6 +10,11 @@ ZRAM_PERCENT="${ZRAM_PERCENT:-50}"
 ZRAM_ALGO="${ZRAM_ALGO:-lz4}"
 DISK_SWAP_MB="${DISK_SWAP_MB:-1024}"
 SWAPPINESS="${SWAPPINESS:-100}"
+VFS_CACHE_PRESSURE="${VFS_CACHE_PRESSURE:-150}"
+DIRTY_BACKGROUND_RATIO="${DIRTY_BACKGROUND_RATIO:-2}"
+DIRTY_RATIO="${DIRTY_RATIO:-10}"
+RUNTIME_MALLOC_ARENA_MAX="${RUNTIME_MALLOC_ARENA_MAX:-2}"
+RUNTIME_MALLOC_TRIM_THRESHOLD="${RUNTIME_MALLOC_TRIM_THRESHOLD:-131072}"
 
 log() {
   echo "[optimize-pi-memory] $*"
@@ -59,10 +64,26 @@ log "Configuring kernel VM tuning"
 cat <<EOF | $SUDO tee /etc/sysctl.d/99-whisplay-memory.conf >/dev/null
 vm.swappiness=${SWAPPINESS}
 vm.page-cluster=0
+vm.vfs_cache_pressure=${VFS_CACHE_PRESSURE}
+vm.dirty_background_ratio=${DIRTY_BACKGROUND_RATIO}
+vm.dirty_ratio=${DIRTY_RATIO}
 EOF
 
 if command -v sysctl >/dev/null 2>&1; then
   $SUDO sysctl --system >/dev/null 2>&1 || true
 fi
 
-log "Memory tuning applied. Reboot the Pi for the cleanest start."
+if command -v systemctl >/dev/null 2>&1; then
+  log "Configuring chatbot service allocator tuning"
+  $SUDO install -d /etc/systemd/system/chatbot.service.d
+  cat <<EOF | $SUDO tee /etc/systemd/system/chatbot.service.d/20-memory.conf >/dev/null
+[Service]
+Environment=MALLOC_ARENA_MAX=${RUNTIME_MALLOC_ARENA_MAX}
+Environment=MALLOC_TRIM_THRESHOLD_=${RUNTIME_MALLOC_TRIM_THRESHOLD}
+EOF
+  $SUDO systemctl daemon-reload >/dev/null 2>&1 || true
+fi
+
+log "Memory tuning applied: zram=${ZRAM_PERCENT}% swap=${DISK_SWAP_MB}MB swappiness=${SWAPPINESS} vfs_cache_pressure=${VFS_CACHE_PRESSURE}."
+log "Runtime allocator tuning applied: MALLOC_ARENA_MAX=${RUNTIME_MALLOC_ARENA_MAX} MALLOC_TRIM_THRESHOLD_=${RUNTIME_MALLOC_TRIM_THRESHOLD}."
+log "Reboot the Pi for the cleanest start. This improves effective headroom but does not increase the physical 8GB RAM limit."

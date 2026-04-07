@@ -150,7 +150,7 @@ For Polish voice use on a Pi 5 8GB, the practical sweet spot is:
 - `ENABLE_THINKING=false` and `USE_CAPTURED_IMAGE_IN_CHAT=false` to keep latency and RAM usage down
 - short chat history so each request stays small
 
-The Pi installer now includes a Polish speed profile and an optional Raspberry Pi memory tuning step that configures zram plus a small disk swap fallback.
+The Pi installer now includes a Polish speed profile and an optional Raspberry Pi memory tuning step with balanced or aggressive profiles. It configures zram, disk swap fallback, extra VM cache/writeback tuning, and lower-fragmentation allocator defaults for long-running Node/Python processes. This improves effective working headroom on Pi 5 8GB, but it does not increase the physical RAM limit.
 
 ## RAG Knowledge Base
 
