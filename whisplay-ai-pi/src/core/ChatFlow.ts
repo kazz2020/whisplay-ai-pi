@@ -242,6 +242,7 @@ class ChatFlow implements ChatFlowContext {
     this.wakeSessionStartAt = Date.now();
     this.wakeSessionLastSpeechAt = this.wakeSessionStartAt;
     this.endAfterAnswer = false;
+    this.wakeWordListener?.stop();
     playWakeupChime();
     this.transitionTo("wake_listening");
   };
@@ -249,6 +250,7 @@ class ChatFlow implements ChatFlowContext {
   endWakeSession = (): void => {
     this.wakeSessionActive = false;
     this.endAfterAnswer = false;
+    this.wakeWordListener?.start();
   };
 
   shouldContinueWakeSession = (): boolean => {

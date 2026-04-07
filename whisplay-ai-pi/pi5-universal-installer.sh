@@ -59,13 +59,14 @@ RAG_KNOWLEDGE_MAX_CONTEXT_CHARS_VALUE="1800"
 WAKE_WORD_ENGINE="disabled"
 WAKE_WORD_PHRASE=""
 WAKE_WORD_REFERENCE_DIR=""
-WAKE_WORD_THRESHOLD="0.16"
+WAKE_WORD_THRESHOLD="0.10"
+WAKE_WORD_TRIGGER_DISTANCE="0.09"
 WAKE_WORD_BUFFER_SIZE="1.8"
 WAKE_WORD_SLIDE_SIZE="0.25"
 WAKE_WORD_SAMPLE_COUNT="4"
 WAKE_WORD_SAMPLE_DURATION="3"
 WAKE_WORD_OPENWAKEWORD_MODEL="hey_jarvis"
-WAKE_WORD_COOLDOWN_SEC="1.5"
+WAKE_WORD_COOLDOWN_SEC="2.5"
 WAKE_WORD_VAD_THRESHOLD="0.2"
 WAKE_WORD_ENABLE_SPEEX="true"
 WAKE_WORD_END_KEYWORDS_VALUE="byebye,goodbye,stop"
@@ -550,7 +551,9 @@ apply_polish_wake_defaults() {
     WAKE_WORD_VAD_THRESHOLD="0.25"
     WAKE_WORD_ENABLE_SPEEX="true"
   elif [ "${WAKE_WORD_ENGINE}" = "local-wake" ]; then
-    WAKE_WORD_THRESHOLD="0.14"
+    WAKE_WORD_THRESHOLD="0.10"
+    WAKE_WORD_TRIGGER_DISTANCE="0.09"
+    WAKE_WORD_COOLDOWN_SEC="2.5"
     WAKE_WORD_BUFFER_SIZE="1.8"
     WAKE_WORD_SLIDE_SIZE="0.25"
   fi
@@ -1706,9 +1709,11 @@ pick_wake_word_config() {
     2)
       WAKE_WORD_ENGINE="local-wake"
       WAKE_WORD_END_KEYWORDS_VALUE="byebye,goodbye,stop"
-      WAKE_WORD_THRESHOLD="0.16"
+      WAKE_WORD_THRESHOLD="0.10"
+      WAKE_WORD_TRIGGER_DISTANCE="0.09"
       WAKE_WORD_BUFFER_SIZE="1.8"
       WAKE_WORD_SLIDE_SIZE="0.25"
+      WAKE_WORD_COOLDOWN_SEC="2.5"
       local phrase_choice
       if [ "${ASR_LANGUAGE}" = "pl" ]; then
         apply_polish_wake_defaults
@@ -1760,8 +1765,10 @@ pick_wake_word_config() {
         *) die "Invalid wake phrase choice" ;;
       esac
       WAKE_WORD_THRESHOLD=$(prompt_value "local-wake distance threshold (lower is stricter)" "${WAKE_WORD_THRESHOLD}")
+      WAKE_WORD_TRIGGER_DISTANCE=$(prompt_value "local-wake trigger distance cap (leave at 0.09 unless your phrase is missed)" "${WAKE_WORD_TRIGGER_DISTANCE}")
       WAKE_WORD_BUFFER_SIZE=$(prompt_value "local-wake buffer size (seconds)" "${WAKE_WORD_BUFFER_SIZE}")
       WAKE_WORD_SLIDE_SIZE=$(prompt_value "local-wake slide size (seconds)" "${WAKE_WORD_SLIDE_SIZE}")
+      WAKE_WORD_COOLDOWN_SEC=$(prompt_value "local-wake cooldown in seconds" "${WAKE_WORD_COOLDOWN_SEC}")
       WAKE_WORD_SAMPLE_COUNT=$(prompt_value "Number of reference recordings" "4")
       WAKE_WORD_SAMPLE_DURATION=$(prompt_value "Duration of each reference recording (seconds, whole numbers work best)" "3")
       WAKE_WORD_REFERENCE_DIR="${PROJECT_ROOT}/data/wakewords/$(slugify "${WAKE_WORD_PHRASE}")"
@@ -1976,6 +1983,8 @@ if [ "${INSTALL_WAKE_WORD}" = true ]; then
     set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_REFERENCE_DIR" "${WAKE_WORD_REFERENCE_DIR}"
     set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_LOCAL_WAKE_BUFFER_SIZE" "${WAKE_WORD_BUFFER_SIZE}"
     set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_LOCAL_WAKE_SLIDE_SIZE" "${WAKE_WORD_SLIDE_SIZE}"
+    set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_LOCAL_WAKE_TRIGGER_DISTANCE" "${WAKE_WORD_TRIGGER_DISTANCE}"
+    set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_COOLDOWN_SEC" "${WAKE_WORD_COOLDOWN_SEC}"
   else
     set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORDS" "${WAKE_WORD_OPENWAKEWORD_MODEL}"
     set_env_value "${CHATBOT_ENV_FILE}" "WAKE_WORD_COOLDOWN_SEC" "${WAKE_WORD_COOLDOWN_SEC}"

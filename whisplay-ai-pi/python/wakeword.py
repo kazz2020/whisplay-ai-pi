@@ -11,6 +11,13 @@ from pathlib import Path
 import numpy as np
 
 
+def parse_float(value: str, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def parse_list(value: str):
     return [item.strip() for item in value.split(",") if item.strip()]
 
@@ -79,19 +86,32 @@ def run_local_wake() -> int:
             f"No .wav reference samples found in {reference_path}. Record samples first."
         )
 
-    threshold = os.getenv("WAKE_WORD_THRESHOLD", "0.12")
-    cooldown_sec = float(os.getenv("WAKE_WORD_COOLDOWN_SEC", "2.0"))
+    threshold = parse_float(os.getenv("WAKE_WORD_THRESHOLD", "0.12"), 0.12)
+    cooldown_sec = parse_float(os.getenv("WAKE_WORD_COOLDOWN_SEC", "2.0"), 2.0)
     buffer_size = os.getenv("WAKE_WORD_LOCAL_WAKE_BUFFER_SIZE", "1.8")
     slide_size = os.getenv("WAKE_WORD_LOCAL_WAKE_SLIDE_SIZE", "0.25")
     method = os.getenv("WAKE_WORD_LOCAL_WAKE_METHOD", "embedding").strip() or "embedding"
+    trigger_distance_raw = os.getenv("WAKE_WORD_LOCAL_WAKE_TRIGGER_DISTANCE", "").strip()
+    debug_enabled = os.getenv("WAKE_WORD_LOCAL_WAKE_DEBUG", "false").lower() == "true"
     phrase = os.getenv("WAKE_WORD_PHRASE", "").strip() or reference_path.name
+
+    if trigger_distance_raw:
+        trigger_distance = parse_float(trigger_distance_raw, threshold)
+    elif threshold > 0.10:
+        trigger_distance = 0.09
+    else:
+        trigger_distance = threshold
+
+    trigger_distance = min(trigger_distance, threshold)
+    if trigger_distance <= 0:
+        trigger_distance = threshold
 
     local_wake_bin = resolve_local_wake_bin()
     command = [
         local_wake_bin,
         "listen",
         str(reference_path),
-        threshold,
+        str(threshold),
         "--method",
         method,
         "--buffer-size",
@@ -99,11 +119,11 @@ def run_local_wake() -> int:
         "--slide-size",
         slide_size,
     ]
-    if is_trace_enabled():
+    if debug_enabled:
         command.append("--debug")
 
     log(
-        f"Engine=local-wake phrase='{phrase}' refs={len(wav_files)} threshold={threshold}"
+        f"Engine=local-wake phrase='{phrase}' refs={len(wav_files)} threshold={threshold:.3f} trigger_distance={trigger_distance:.3f} cooldown={cooldown_sec:.1f}s"
     )
     process = subprocess.Popen(
         command,
@@ -151,6 +171,13 @@ def run_local_wake() -> int:
         distance = payload.get("distance")
         timestamp = payload.get("timestamp")
         if distance is not None:
+            distance = parse_float(str(distance), threshold)
+            if distance > trigger_distance:
+                if is_trace_enabled():
+                    log(
+                        f"Ignoring loose match phrase='{phrase}' matched='{wake_label}' distance={distance:.4f} trigger_distance={trigger_distance:.4f}"
+                    )
+                continue
             now = time.time()
             if now - last_trigger < cooldown_sec:
                 continue
