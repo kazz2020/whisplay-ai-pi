@@ -51,6 +51,7 @@ export enum TTSServer {
   gemini = "gemini",
   piper = "piper",
   piperhttp = "piper-http",
+  sherpaonnx = "sherpa-onnx",
   espeakng = "espeak-ng",
   llm8850melotts = "llm8850melotts",
   supertonic = "supertonic",

@@ -113,12 +113,23 @@ The installer can:
 - clone/build llama.cpp if missing
 - install the WM8960 driver for the Whisplay HAT
 - install chatbot dependencies
-- install local faster-whisper and Piper dependencies
+- install local faster-whisper and local TTS dependencies
 - install wake word detection with either local-wake or openWakeWord
 - pre-download the selected local ASR and LLM models
 - generate a local `.env`
 - build the chatbot
 - install the systemd service
+
+## Local TTS backend choice
+
+The installer now supports two local TTS backends on Raspberry Pi:
+
+- `piper-http`: the original and most integrated path in this repository
+- `sherpa-onnx`: an alternative offline backend so you can compare Polish voices on the same Pi
+
+For Sherpa ONNX, the current installer exposes Polish presets such as `pl_PL-gosia-medium` and `pl_PL-darkman-medium` and downloads the model into a local directory such as `/home/pi/sherpa-onnx-tts/`.
+
+You can switch later by rerunning the installer and picking a different TTS backend, or by updating `TTS_SERVER` and the corresponding TTS environment variables in `.env`.
 
 ## Wake word options
 

@@ -81,6 +81,19 @@ export function registerTTSPlugins(): void {
   } as TTSPlugin);
 
   pluginRegistry.register({
+    name: "sherpa-onnx",
+    displayName: "Sherpa ONNX TTS",
+    version: "1.0.0",
+    type: "tts",
+    audioFormat: "wav",
+    description: "Sherpa ONNX offline text-to-speech",
+    activate: () => {
+      const ttsProcessor = require("../../cloud-api/local/sherpa-onnx-tts").default;
+      return { ttsProcessor };
+    },
+  } as TTSPlugin);
+
+  pluginRegistry.register({
     name: "espeak-ng",
     displayName: "eSpeak NG TTS",
     version: "1.0.0",

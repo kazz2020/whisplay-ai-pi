@@ -11,6 +11,7 @@ export enum defaultPortMap {
   llm8850lcm = 8806,
   hailoWhisper = 8807,
   hailoVlm = 8808,
+  sherpaOnnxTts = 8809,
 }
 
 export const getOllamaHeaders = (): Record<string, string> => {

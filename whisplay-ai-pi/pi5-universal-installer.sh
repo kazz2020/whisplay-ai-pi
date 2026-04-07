@@ -8,8 +8,11 @@ PREFERRED_LLAMA_DIR="${PROJECT_ROOT}/../llama.cpp-master"
 DRIVER_REPO_URL="https://github.com/PiSugar/whisplay.git"
 LLAMA_REPO_URL="https://github.com/ggml-org/llama.cpp.git"
 DEFAULT_PIPER_DIR="${HOME}/piper"
+DEFAULT_SHERPA_ONNX_TTS_DIR="${HOME}/sherpa-onnx-tts"
 DRIVER_REBOOT_RECOMMENDED=false
 ASR_LANGUAGE="en"
+ASR_LANGUAGE_LABEL="English"
+ASSISTANT_LANGUAGE_LABEL="English"
 ASSISTANT_SYSTEM_PROMPT="You are a practical voice assistant running on a Raspberry Pi. Reply in English unless the user clearly asks for another language. Keep answers short, natural, and directly useful for spoken conversation. Prefer clear actions and concrete facts over long explanations. If you are unsure, say so plainly and do not guess."
 LLM_SERVER_SELECTION="llama.cpp"
 LLM_PROVIDER="llama.cpp"
@@ -62,6 +65,19 @@ WAKE_WORD_ENABLE_SPEEX="true"
 WAKE_WORD_END_KEYWORDS_VALUE="byebye,goodbye,stop"
 DOWNLOAD_OPENWAKEWORD_MODEL=false
 RECORD_WAKE_WORD_SAMPLES=false
+TTS_SERVER_SELECTION="piper-http"
+TTS_PROFILE_LABEL="Piper HTTP"
+SHERPA_ONNX_TTS_DIR="${DEFAULT_SHERPA_ONNX_TTS_DIR}"
+SHERPA_ONNX_TTS_MODEL_PACKAGE="vits-piper-pl_PL-gosia-medium"
+SHERPA_ONNX_TTS_MODEL_LABEL="Polish: pl_PL-gosia-medium"
+SHERPA_ONNX_TTS_MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pl_PL-gosia-medium.tar.bz2"
+SHERPA_ONNX_TTS_HOST_VALUE="127.0.0.1"
+SHERPA_ONNX_TTS_PORT_VALUE="8809"
+SHERPA_ONNX_TTS_NUM_THREADS_VALUE="2"
+SHERPA_ONNX_TTS_PROVIDER_VALUE="cpu"
+SHERPA_ONNX_TTS_SPEAKER_ID_VALUE="0"
+SHERPA_ONNX_TTS_SPEED_VALUE="1.0"
+DOWNLOAD_SHERPA_ONNX_TTS_MODEL=true
 
 if [ -t 1 ]; then
   COLOR_RESET=$(printf '\033[0m')
@@ -179,9 +195,18 @@ print_final_review() {
   fi
 
   print_review_item "ASR model" "${ASR_MODEL}"
+  print_review_item "Assistant language" "${ASSISTANT_LANGUAGE_LABEL}"
   print_review_item "ASR language" "${ASR_LANGUAGE}"
-  print_review_item "Piper voice" "${PIPER_VOICE}"
-  print_review_item "Piper dir" "${PIPER_DIR}"
+  print_review_item "TTS backend" "${TTS_PROFILE_LABEL}"
+  if [ "${TTS_SERVER_SELECTION}" = "piper-http" ]; then
+    print_review_item "Piper voice" "${PIPER_VOICE}"
+    print_review_item "Piper dir" "${PIPER_DIR}"
+  else
+    print_review_item "Sherpa model" "${SHERPA_ONNX_TTS_MODEL_LABEL}"
+    print_review_item "Sherpa dir" "${SHERPA_ONNX_TTS_DIR}"
+    print_review_item "Sherpa port" "${SHERPA_ONNX_TTS_PORT_VALUE}"
+    print_review_item "Pre-download TTS" "$(format_enabled "${DOWNLOAD_SHERPA_ONNX_TTS_MODEL}")"
+  fi
   print_review_item "Thinking mode" "${ENABLE_THINKING_VALUE}"
   print_review_item "Use camera in chat" "${USE_CAPTURED_IMAGE_IN_CHAT_VALUE}"
   print_review_item "Chat history limit" "${CHATBOT_MAX_MESSAGES}"
@@ -229,6 +254,8 @@ print_final_review() {
 
 reset_install_choices() {
   ASR_LANGUAGE="en"
+  ASR_LANGUAGE_LABEL="English"
+  ASSISTANT_LANGUAGE_LABEL="English"
   ASSISTANT_SYSTEM_PROMPT="You are a practical voice assistant running on a Raspberry Pi. Reply in English unless the user clearly asks for another language. Keep answers short, natural, and directly useful for spoken conversation. Prefer clear actions and concrete facts over long explanations. If you are unsure, say so plainly and do not guess."
   LLM_SERVER_SELECTION="llama.cpp"
   LLM_PROVIDER="llama.cpp"
@@ -282,6 +309,19 @@ reset_install_choices() {
   WAKE_WORD_END_KEYWORDS_VALUE="byebye,goodbye,stop"
   DOWNLOAD_OPENWAKEWORD_MODEL=false
   RECORD_WAKE_WORD_SAMPLES=false
+  TTS_SERVER_SELECTION="piper-http"
+  TTS_PROFILE_LABEL="Piper HTTP"
+  SHERPA_ONNX_TTS_DIR="${DEFAULT_SHERPA_ONNX_TTS_DIR}"
+  SHERPA_ONNX_TTS_MODEL_PACKAGE="vits-piper-pl_PL-gosia-medium"
+  SHERPA_ONNX_TTS_MODEL_LABEL="Polish: pl_PL-gosia-medium"
+  SHERPA_ONNX_TTS_MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pl_PL-gosia-medium.tar.bz2"
+  SHERPA_ONNX_TTS_HOST_VALUE="127.0.0.1"
+  SHERPA_ONNX_TTS_PORT_VALUE="8809"
+  SHERPA_ONNX_TTS_NUM_THREADS_VALUE="2"
+  SHERPA_ONNX_TTS_PROVIDER_VALUE="cpu"
+  SHERPA_ONNX_TTS_SPEAKER_ID_VALUE="0"
+  SHERPA_ONNX_TTS_SPEED_VALUE="1.0"
+  DOWNLOAD_SHERPA_ONNX_TTS_MODEL=true
   INSTALL_DRIVER=false
   INSTALL_CHATBOT_DEPS=false
   INSTALL_LLAMA_CPP=false
@@ -1298,38 +1338,204 @@ pick_asr_model() {
   esac
 }
 
-pick_tts_voice() {
-  local choice
-  choice=$(choose_from_menu \
-    "Select the Piper voice" \
-    "1" \
-    "1|English: en_US-lessac-medium (recommended)" \
-    "2|Polish: pl_PL-gosia-medium" \
-    "3|German: de_DE-thorsten-medium" \
-    "4|custom voice id")
-  case "${choice}" in
-    1)
-      PIPER_VOICE="en_US-lessac-medium"
-      ASR_LANGUAGE="en"
-      ASSISTANT_SYSTEM_PROMPT="You are a practical voice assistant running on a Raspberry Pi. Reply in English unless the user clearly asks for another language. Keep answers short, natural, and directly useful for spoken conversation. Prefer clear actions and concrete facts over long explanations. If you are unsure, say so plainly and do not guess."
-      ;;
-    2)
-      PIPER_VOICE="pl_PL-gosia-medium"
-      ASR_LANGUAGE="pl"
+set_default_assistant_prompt_for_language() {
+  local language_code="$1"
+
+  case "${language_code}" in
+    pl)
+      ASSISTANT_LANGUAGE_LABEL="Polish"
       ASSISTANT_SYSTEM_PROMPT="You are a practical voice assistant running on a Raspberry Pi. Always reply in Polish unless the user clearly asks for another language. Keep answers short, natural, and directly useful for spoken conversation. Prefer clear actions and concrete facts over long explanations. If you are unsure, say so plainly and do not guess."
       ;;
-    3)
-      PIPER_VOICE="de_DE-thorsten-medium"
-      ASR_LANGUAGE="de"
+    de)
+      ASSISTANT_LANGUAGE_LABEL="German"
       ASSISTANT_SYSTEM_PROMPT="You are a practical voice assistant running on a Raspberry Pi. Always reply in German unless the user clearly asks for another language. Keep answers short, natural, and directly useful for spoken conversation. Prefer clear actions and concrete facts over long explanations. If you are unsure, say so plainly and do not guess."
       ;;
-    4)
-      PIPER_VOICE=$(prompt_value "Enter Piper voice id" "en_US-lessac-medium")
-      ASR_LANGUAGE=$(prompt_value "Enter faster-whisper language code (en/pl/de or empty for auto)" "en")
-      ASSISTANT_SYSTEM_PROMPT=$(prompt_value "Enter assistant language instruction" "You are a practical voice assistant running on a Raspberry Pi. Reply in English unless the user clearly asks for another language. Keep answers short, natural, and directly useful for spoken conversation. Prefer clear actions and concrete facts over long explanations. If you are unsure, say so plainly and do not guess.")
+    *)
+      ASSISTANT_LANGUAGE_LABEL="English"
+      ASSISTANT_SYSTEM_PROMPT="You are a practical voice assistant running on a Raspberry Pi. Reply in English unless the user clearly asks for another language. Keep answers short, natural, and directly useful for spoken conversation. Prefer clear actions and concrete facts over long explanations. If you are unsure, say so plainly and do not guess."
       ;;
-    *) die "Invalid Piper voice choice" ;;
   esac
+}
+
+pick_assistant_language() {
+  local choice custom_label
+
+  choice=$(choose_from_menu \
+    "Select the assistant reply language" \
+    "1" \
+    "1|English" \
+    "2|Polish" \
+    "3|German" \
+    "4|Custom instruction")
+
+  case "${choice}" in
+    1)
+      set_default_assistant_prompt_for_language "en"
+      ;;
+    2)
+      set_default_assistant_prompt_for_language "pl"
+      ;;
+    3)
+      set_default_assistant_prompt_for_language "de"
+      ;;
+    4)
+      custom_label=$(prompt_value "Enter assistant language label" "Custom")
+      ASSISTANT_LANGUAGE_LABEL="${custom_label}"
+      ASSISTANT_SYSTEM_PROMPT=$(prompt_value "Enter assistant language instruction" "You are a practical voice assistant running on a Raspberry Pi. Reply in the user's preferred language. Keep answers short, natural, and directly useful for spoken conversation. Prefer clear actions and concrete facts over long explanations. If you are unsure, say so plainly and do not guess.")
+      ;;
+    *) die "Invalid assistant language choice" ;;
+  esac
+}
+
+pick_asr_language() {
+  local choice custom_code
+
+  choice=$(choose_from_menu \
+    "Select the ASR language" \
+    "1" \
+    "1|English (en)" \
+    "2|Polish (pl)" \
+    "3|German (de)" \
+    "4|Auto detect / empty" \
+    "5|Custom language code")
+
+  case "${choice}" in
+    1)
+      ASR_LANGUAGE="en"
+      ASR_LANGUAGE_LABEL="English"
+      ;;
+    2)
+      ASR_LANGUAGE="pl"
+      ASR_LANGUAGE_LABEL="Polish"
+      ;;
+    3)
+      ASR_LANGUAGE="de"
+      ASR_LANGUAGE_LABEL="German"
+      ;;
+    4)
+      ASR_LANGUAGE=""
+      ASR_LANGUAGE_LABEL="Auto detect"
+      ;;
+    5)
+      custom_code=$(prompt_value "Enter faster-whisper language code (for example en, pl, de)" "en")
+      ASR_LANGUAGE="${custom_code}"
+      ASR_LANGUAGE_LABEL="Custom (${custom_code:-auto})"
+      ;;
+    *) die "Invalid ASR language choice" ;;
+  esac
+}
+
+pick_tts_voice() {
+  local backend_choice voice_choice
+
+  backend_choice=$(choose_from_menu \
+    "Select the local TTS backend" \
+    "1" \
+    "1|Piper HTTP (recommended, simplest)" \
+    "2|Sherpa ONNX (offline comparison option on the Pi)")
+
+  case "${backend_choice}" in
+    1)
+      TTS_SERVER_SELECTION="piper-http"
+      TTS_PROFILE_LABEL="Piper HTTP"
+      voice_choice=$(choose_from_menu \
+        "Select the Piper voice" \
+        "1" \
+        "1|English: en_US-lessac-medium (recommended)" \
+        "2|Polish: pl_PL-gosia-medium" \
+        "3|German: de_DE-thorsten-medium" \
+        "4|custom voice id")
+      case "${voice_choice}" in
+        1)
+          PIPER_VOICE="en_US-lessac-medium"
+          ;;
+        2)
+          PIPER_VOICE="pl_PL-gosia-medium"
+          ;;
+        3)
+          PIPER_VOICE="de_DE-thorsten-medium"
+          ;;
+        4)
+          PIPER_VOICE=$(prompt_value "Enter Piper voice id" "en_US-lessac-medium")
+          ;;
+        *) die "Invalid Piper voice choice" ;;
+      esac
+      ;;
+    2)
+      TTS_SERVER_SELECTION="sherpa-onnx"
+      TTS_PROFILE_LABEL="Sherpa ONNX"
+      voice_choice=$(choose_from_menu \
+        "Select the Sherpa ONNX voice" \
+        "1" \
+        "1|Polish: pl_PL-gosia-medium" \
+        "2|Polish: pl_PL-darkman-medium" \
+        "3|custom Sherpa ONNX model package")
+      case "${voice_choice}" in
+        1)
+          SHERPA_ONNX_TTS_MODEL_PACKAGE="vits-piper-pl_PL-gosia-medium"
+          SHERPA_ONNX_TTS_MODEL_LABEL="Polish: pl_PL-gosia-medium"
+          ;;
+        2)
+          SHERPA_ONNX_TTS_MODEL_PACKAGE="vits-piper-pl_PL-darkman-medium"
+          SHERPA_ONNX_TTS_MODEL_LABEL="Polish: pl_PL-darkman-medium"
+          ;;
+        3)
+          SHERPA_ONNX_TTS_MODEL_PACKAGE=$(prompt_value "Enter Sherpa ONNX model package name" "vits-piper-pl_PL-gosia-medium")
+          SHERPA_ONNX_TTS_MODEL_LABEL=$(prompt_value "Enter Sherpa ONNX model label" "Custom Sherpa ONNX voice")
+          ;;
+        *) die "Invalid Sherpa ONNX voice choice" ;;
+      esac
+      SHERPA_ONNX_TTS_MODEL_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/${SHERPA_ONNX_TTS_MODEL_PACKAGE}.tar.bz2"
+      if prompt_yes_no "Pre-download Sherpa ONNX TTS model during install" "y"; then
+        DOWNLOAD_SHERPA_ONNX_TTS_MODEL=true
+      else
+        DOWNLOAD_SHERPA_ONNX_TTS_MODEL=false
+      fi
+      ;;
+    *) die "Invalid TTS backend choice" ;;
+  esac
+}
+
+download_sherpa_onnx_tts_model() {
+  local url="$1"
+  local target_root="$2"
+  local package_name="$3"
+
+  if [ -z "${url}" ] || [ -z "${package_name}" ]; then
+    warn "Skipping Sherpa ONNX model download because the model URL or package name is empty."
+    return 1
+  fi
+
+  mkdir -p "${target_root}"
+  SHERPA_URL="${url}" SHERPA_TARGET_ROOT="${target_root}" SHERPA_PACKAGE_NAME="${package_name}" python3 - <<'PY'
+import bz2
+import os
+import shutil
+import tarfile
+import tempfile
+import urllib.request
+from pathlib import Path
+
+url = os.environ["SHERPA_URL"]
+target_root = Path(os.environ["SHERPA_TARGET_ROOT"]).expanduser()
+package_name = os.environ["SHERPA_PACKAGE_NAME"]
+model_dir = target_root / package_name
+
+if model_dir.exists() and any(model_dir.iterdir()):
+    print(f"Sherpa ONNX model already present: {model_dir}")
+    raise SystemExit(0)
+
+target_root.mkdir(parents=True, exist_ok=True)
+
+with tempfile.TemporaryDirectory() as temp_dir:
+    archive_path = Path(temp_dir) / f"{package_name}.tar.bz2"
+    print(f"Downloading {url} -> {archive_path}")
+    urllib.request.urlretrieve(url, archive_path)
+    with tarfile.open(archive_path, mode="r:bz2") as tar:
+        tar.extractall(path=target_root)
+
+print(f"Sherpa ONNX model ready: {model_dir}")
+PY
 }
 
 pick_polish_quality_mode() {
@@ -1527,7 +1733,7 @@ while true; do
   if prompt_yes_no "Install chatbot dependencies (Node, Python, fonts)" "y"; then INSTALL_CHATBOT_DEPS=true; fi
   if prompt_yes_no "Build and install llama.cpp server" "y"; then INSTALL_LLAMA_CPP=true; fi
   if prompt_yes_no "Install local ASR (faster-whisper)" "y"; then INSTALL_LOCAL_ASR=true; fi
-  if prompt_yes_no "Install local TTS (Piper HTTP)" "y"; then INSTALL_LOCAL_TTS=true; fi
+  if prompt_yes_no "Install local TTS runtime" "y"; then INSTALL_LOCAL_TTS=true; fi
   if prompt_yes_no "Install wake word detection" "y"; then INSTALL_WAKE_WORD=true; fi
   if prompt_yes_no "Build chatbot TypeScript app" "y"; then BUILD_CHATBOT=true; fi
   if prompt_yes_no "Install chatbot systemd service" "y"; then INSTALL_SERVICE=true; fi
@@ -1540,6 +1746,8 @@ while true; do
 
   pick_asr_model
   pick_tts_voice
+  pick_assistant_language
+  pick_asr_language
   pick_llm_runtime_mode
   if [ "${LLM_SERVER_SELECTION}" = "llama.cpp" ]; then
     pick_llm_repo
@@ -1570,7 +1778,11 @@ while true; do
 
   DRIVER_DIR=$(prompt_value "Whisplay driver repo directory" "${PREFERRED_DRIVER_DIR}")
   LLAMA_DIR="${PREFERRED_LLAMA_DIR}"
-  PIPER_DIR=$(prompt_value "Piper model directory" "${DEFAULT_PIPER_DIR}")
+  if [ "${TTS_SERVER_SELECTION}" = "piper-http" ]; then
+    PIPER_DIR=$(prompt_value "Piper model directory" "${DEFAULT_PIPER_DIR}")
+  else
+    SHERPA_ONNX_TTS_DIR=$(prompt_value "Sherpa ONNX model directory" "${DEFAULT_SHERPA_ONNX_TTS_DIR}")
+  fi
 
   CHATBOT_THREADS="${BRAIN_THREADS_DEFAULT:-4}"
   CHATBOT_CONTEXT="${BRAIN_CONTEXT_DEFAULT:-2048}"
@@ -1621,7 +1833,7 @@ fi
 cp "${CHATBOT_ENV_TEMPLATE}" "${CHATBOT_ENV_FILE}"
 set_env_value "${CHATBOT_ENV_FILE}" "ASR_SERVER" "faster-whisper"
 set_env_value "${CHATBOT_ENV_FILE}" "LLM_SERVER" "${LLM_SERVER_SELECTION}"
-set_env_value "${CHATBOT_ENV_FILE}" "TTS_SERVER" "piper-http"
+set_env_value "${CHATBOT_ENV_FILE}" "TTS_SERVER" "${TTS_SERVER_SELECTION}"
 set_env_value "${CHATBOT_ENV_FILE}" "SERVE_LLAMA_CPP" "${SERVE_LLAMA_CPP_VALUE}"
 set_env_value "${CHATBOT_ENV_FILE}" "SERVE_OLLAMA" "${SERVE_OLLAMA_VALUE}"
 set_env_value "${CHATBOT_ENV_FILE}" "SERVE_QDRANT" "${SERVE_QDRANT_VALUE}"
@@ -1643,7 +1855,19 @@ set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_ENABLE_TOOLS" "false"
 
 set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_MODEL_SIZE_OR_PATH" "${ASR_MODEL}"
 set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_LANGUAGE" "${ASR_LANGUAGE}"
-set_env_value "${CHATBOT_ENV_FILE}" "PIPER_HTTP_MODEL" "${PIPER_DIR}/${PIPER_VOICE}"
+if [ "${TTS_SERVER_SELECTION}" = "piper-http" ]; then
+  set_env_value "${CHATBOT_ENV_FILE}" "PIPER_HTTP_HOST" "localhost"
+  set_env_value "${CHATBOT_ENV_FILE}" "PIPER_HTTP_PORT" "8805"
+  set_env_value "${CHATBOT_ENV_FILE}" "PIPER_HTTP_MODEL" "${PIPER_DIR}/${PIPER_VOICE}"
+else
+  set_env_value "${CHATBOT_ENV_FILE}" "SHERPA_ONNX_TTS_HOST" "${SHERPA_ONNX_TTS_HOST_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "SHERPA_ONNX_TTS_PORT" "${SHERPA_ONNX_TTS_PORT_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "SHERPA_ONNX_TTS_MODEL_DIR" "${SHERPA_ONNX_TTS_DIR}/${SHERPA_ONNX_TTS_MODEL_PACKAGE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "SHERPA_ONNX_TTS_NUM_THREADS" "${SHERPA_ONNX_TTS_NUM_THREADS_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "SHERPA_ONNX_TTS_PROVIDER" "${SHERPA_ONNX_TTS_PROVIDER_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "SHERPA_ONNX_TTS_SPEAKER_ID" "${SHERPA_ONNX_TTS_SPEAKER_ID_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "SHERPA_ONNX_TTS_SPEED" "${SHERPA_ONNX_TTS_SPEED_VALUE}"
+fi
 set_env_value "${CHATBOT_ENV_FILE}" "SYSTEM_PROMPT" "${ASSISTANT_SYSTEM_PROMPT}"
 set_env_value "${CHATBOT_ENV_FILE}" "ENABLE_THINKING" "${ENABLE_THINKING_VALUE}"
 set_env_value "${CHATBOT_ENV_FILE}" "USE_CAPTURED_IMAGE_IN_CHAT" "${USE_CAPTURED_IMAGE_IN_CHAT_VALUE}"
@@ -1751,13 +1975,25 @@ if [ "${DOWNLOAD_ASR_MODEL}" = true ]; then
 fi
 
 if [ "${INSTALL_LOCAL_TTS}" = true ]; then
-  log "Installing Piper HTTP dependencies"
-  python3 -m pip install --break-system-packages piper-tts==1.3.0 'piper-tts[http]'
-  mkdir -p "${PIPER_DIR}"
-  (
-    cd "${PIPER_DIR}"
-    python3 -m piper.download_voices "${PIPER_VOICE}"
-  )
+  if [ "${TTS_SERVER_SELECTION}" = "piper-http" ]; then
+    log "Installing Piper HTTP dependencies"
+    python3 -m pip install --break-system-packages piper-tts==1.3.0 'piper-tts[http]'
+    mkdir -p "${PIPER_DIR}"
+    (
+      cd "${PIPER_DIR}"
+      python3 -m piper.download_voices "${PIPER_VOICE}"
+    )
+  else
+    log "Installing Sherpa ONNX TTS dependencies"
+    sudo apt-get update
+    sudo apt-get install -y libsndfile1
+    python3 -m pip install --break-system-packages sherpa-onnx soundfile Flask
+    if [ "${DOWNLOAD_SHERPA_ONNX_TTS_MODEL}" = true ]; then
+      if ! download_sherpa_onnx_tts_model "${SHERPA_ONNX_TTS_MODEL_URL}" "${SHERPA_ONNX_TTS_DIR}" "${SHERPA_ONNX_TTS_MODEL_PACKAGE}"; then
+        warn "Skipping Sherpa ONNX TTS model pre-download. You can download it later by rerunning the installer or extracting the model into ${SHERPA_ONNX_TTS_DIR}."
+      fi
+    fi
+  fi
 fi
 
 if [ "${APPLY_PI_MEMORY_TUNING}" = true ]; then

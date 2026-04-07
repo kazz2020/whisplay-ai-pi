@@ -101,6 +101,13 @@ The installer lets you choose whether to install the HAT driver, chatbot depende
 
 The installer can also enable wake word detection. If you want the most reliable ready-made English option, choose `openWakeWord` with a preset like `hey_jarvis`. If you want your own custom phrase, choose `local-wake` and record reference samples directly on the device.
 
+The installer now also supports two local TTS backends on the Pi:
+
+- `piper-http` for the existing Piper flow
+- `sherpa-onnx` for an alternative offline backend you can compare on the same device
+
+For Sherpa ONNX, the installer can download Polish preset models such as `vits-piper-pl_PL-gosia-medium` and `vits-piper-pl_PL-darkman-medium`, write the matching `.env` values, and let you switch back later by rerunning the installer or changing `TTS_SERVER`.
+
 For Polish, the safer default is `local-wake` with a Polish phrase you record yourself. The installer now also writes Polish end-of-conversation keywords and uses a slightly stricter default threshold for Polish local-wake phrases.
 
 If you choose `openWakeWord`, the installer can now pre-download the preset model during setup so first boot does not depend on network access.
