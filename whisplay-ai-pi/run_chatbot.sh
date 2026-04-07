@@ -148,13 +148,17 @@ get_env_value() {
 initial_volume_level=114
 serve_ollama=false
 serve_llama_cpp=false
+serve_qdrant=false
 llama_cpp_pid=""
+qdrant_started=false
 if [ -f ".env" ]; then
   # Load only SERVE_OLLAMA from .env (ignore comments/other vars)
   SERVE_OLLAMA=$(get_env_value "SERVE_OLLAMA")
   [ -n "$SERVE_OLLAMA" ] && export SERVE_OLLAMA
   SERVE_LLAMA_CPP=$(get_env_value "SERVE_LLAMA_CPP")
   [ -n "$SERVE_LLAMA_CPP" ] && export SERVE_LLAMA_CPP
+  SERVE_QDRANT=$(get_env_value "SERVE_QDRANT")
+  [ -n "$SERVE_QDRANT" ] && export SERVE_QDRANT
   
   CUSTOM_FONT_PATH=$(get_env_value "CUSTOM_FONT_PATH")
   [ -n "$CUSTOM_FONT_PATH" ] && export CUSTOM_FONT_PATH
@@ -177,6 +181,10 @@ if [ -f ".env" ]; then
 
   if [ "$SERVE_LLAMA_CPP" = "true" ]; then
     serve_llama_cpp=true
+  fi
+
+  if [ "$SERVE_QDRANT" = "true" ]; then
+    serve_qdrant=true
   fi
 
   if [ -n "$INITIAL_VOLUME_LEVEL" ]; then
@@ -202,6 +210,56 @@ if [ "$serve_llama_cpp" = true ]; then
   echo "Starting llama.cpp server..."
   start_bg_command "llama.cpp" bash "$script_dir/scripts/serve_llama_cpp.sh"
   llama_cpp_pid=$!
+fi
+
+run_docker_compose_service() {
+  local action="$1"
+  local service="$2"
+  local compose_file="$script_dir/docker/docker-compose.yml"
+
+  if [ ! -f "$compose_file" ]; then
+    echo "Docker compose file not found: $compose_file" >&2
+    return 1
+  fi
+
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    docker compose -f "$compose_file" "$action" -d "$service"
+    return $?
+  fi
+
+  if command -v docker-compose >/dev/null 2>&1; then
+    docker-compose -f "$compose_file" "$action" -d "$service"
+    return $?
+  fi
+
+  echo "Docker Compose not found. Install docker with the compose plugin or docker-compose." >&2
+  return 1
+}
+
+stop_docker_compose_service() {
+  local service="$1"
+  local compose_file="$script_dir/docker/docker-compose.yml"
+
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    docker compose -f "$compose_file" stop "$service"
+    return 0
+  fi
+
+  if command -v docker-compose >/dev/null 2>&1; then
+    docker-compose -f "$compose_file" stop "$service"
+    return 0
+  fi
+
+  return 0
+}
+
+if [ "$serve_qdrant" = true ]; then
+  echo "Starting Qdrant service..."
+  if run_docker_compose_service up qdrant; then
+    qdrant_started=true
+  else
+    echo "WARNING: failed to start Qdrant automatically. RAG may not work until Qdrant is running." >&2
+  fi
 fi
 
 # if file use_npm exists and is true, use npm
@@ -242,6 +300,11 @@ fi
 if [ -n "$llama_cpp_pid" ] && kill -0 "$llama_cpp_pid" >/dev/null 2>&1; then
   echo "Stopping llama.cpp server..."
   kill "$llama_cpp_pid" >/dev/null 2>&1 || true
+fi
+
+if [ "$qdrant_started" = true ]; then
+  echo "Stopping Qdrant service..."
+  stop_docker_compose_service qdrant >/dev/null 2>&1 || true
 fi
 
 # Record end status

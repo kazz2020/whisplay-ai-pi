@@ -10,8 +10,31 @@ const collectionName = "whisplay_knowledge";
 const knowledgeScoreThreshold = parseFloat(
   process.env.RAG_KNOWLEDGE_SCORE_THRESHOLD || "0.65",
 );
+const knowledgeTopK = parseInt(process.env.RAG_KNOWLEDGE_TOP_K || "5", 10);
+const knowledgeMaxChunks = parseInt(
+  process.env.RAG_KNOWLEDGE_MAX_CHUNKS || "3",
+  10,
+);
+const knowledgeMaxChunksPerSource = parseInt(
+  process.env.RAG_KNOWLEDGE_MAX_CHUNKS_PER_SOURCE || "2",
+  10,
+);
+const knowledgeMaxContextChars = parseInt(
+  process.env.RAG_KNOWLEDGE_MAX_CONTEXT_CHARS || "1800",
+  10,
+);
 const promptPrefix = process.env.RAG_KNOWLEDGE_SUMMARY_PROMPT_PREFIX || "Please provide a concise summary for the following text in **30 words** or less:";
 const enableKnowledgeSummary = (process.env.ENABLE_KNOWLEDGE_SUMMARY || "").toLowerCase() === "true";
+
+type KnowledgeSearchResult = {
+  id: number | string;
+  score: number;
+  payload?:
+    | { [key: string]: unknown }
+    | Record<string, unknown>
+    | undefined
+    | null;
+};
 
 export async function indexKnowledgeCollection() {
 
@@ -252,18 +275,75 @@ export async function retrieveKnowledgeByIds(ids: string[]) {
   return await vectorDB.retrieve(collectionName, ids);
 }
 
-export async function getSystemPromptWithKnowledge(query: string) {
-  let results: {
-    id: number | string;
+function buildKnowledgeContext(results: KnowledgeSearchResult[]): string {
+  const sourceChunkCounts = new Map<string, number>();
+  const seenKeys = new Set<string>();
+  const selected: Array<{
+    source: string;
+    chunkIndex: number;
     score: number;
-    payload?:
-      | { [key: string]: unknown }
-      | Record<string, unknown>
-      | undefined
-      | null;
-  }[] = [];
+    content: string;
+  }> = [];
+  let totalChars = 0;
+
+  for (const result of results) {
+    const payload = (result.payload || {}) as Record<string, unknown>;
+    const source = String(payload.source || "knowledge");
+    const chunkIndex = Number(payload.chunkIndex || 0);
+    const rawSummary = typeof payload.summary === "string" ? payload.summary.trim() : "";
+    const rawContent = typeof payload.content === "string" ? payload.content.trim() : "";
+    const content = rawSummary || rawContent;
+
+    if (!content) {
+      continue;
+    }
+
+    const currentPerSource = sourceChunkCounts.get(source) || 0;
+    if (currentPerSource >= knowledgeMaxChunksPerSource) {
+      continue;
+    }
+
+    const dedupeKey = `${source}:${chunkIndex}:${content}`;
+    if (seenKeys.has(dedupeKey)) {
+      continue;
+    }
+
+    const nextChars = totalChars + content.length;
+    if (selected.length >= knowledgeMaxChunks || nextChars > knowledgeMaxContextChars) {
+      continue;
+    }
+
+    seenKeys.add(dedupeKey);
+    sourceChunkCounts.set(source, currentPerSource + 1);
+    totalChars = nextChars;
+    selected.push({
+      source,
+      chunkIndex,
+      score: result.score,
+      content,
+    });
+  }
+
+  if (selected.length === 0) {
+    return "";
+  }
+
+  const sections = selected.map((item, index) => {
+    const score = item.score.toFixed(3);
+    return `[Knowledge ${index + 1}]\nSource: ${item.source}\nChunk: ${item.chunkIndex}\nScore: ${score}\nContent: ${item.content}`;
+  });
+
+  return [
+    "Use the following retrieved knowledge only when it is relevant to the user's request.",
+    "Prefer the retrieved facts over guessing. If the knowledge is incomplete, say so plainly.",
+    sections.join("\n\n"),
+  ].join("\n\n");
+}
+
+export async function getSystemPromptWithKnowledge(query: string) {
+  let results: KnowledgeSearchResult[] = [];
   try {
-    results = await queryKnowledgeBase(query, 1);
+    results = await queryKnowledgeBase(query, knowledgeTopK);
   } catch (error) {
     console.error("[RAG] Error querying knowledge base:", error);
     return "";
@@ -272,16 +352,18 @@ export async function getSystemPromptWithKnowledge(query: string) {
     console.log("[RAG] No knowledge found.");
     return "";
   }
-  const topResult = results[0];
-  if (topResult.score < knowledgeScoreThreshold) {
-    console.log("[RAG] Top knowledge score below threshold:", topResult.score);
+
+  const filteredResults = results.filter(
+    (result) => result.score >= knowledgeScoreThreshold,
+  );
+  if (filteredResults.length === 0) {
+    console.log("[RAG] Top knowledge score below threshold:", results[0].score);
     return "";
   }
-  const knowledgeId = topResult.id as string;
-  const knowledgeData = await retrieveKnowledgeByIds([knowledgeId]);
-  if (knowledgeData.length === 0) {
-    return "";
+
+  const knowledgePrompt = buildKnowledgeContext(filteredResults);
+  if (!knowledgePrompt) {
+    console.log("[RAG] No usable knowledge remained after filtering.");
   }
-  const knowledgeContent = knowledgeData[0].payload!.summary || knowledgeData[0].payload!.content;
-  return `Use the following knowledge to assist in answering the question:\n${knowledgeContent}\n`;
+  return knowledgePrompt;
 }

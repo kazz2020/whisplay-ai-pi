@@ -6,6 +6,7 @@ This repo now supports both a fully local Raspberry Pi 5 setup and a Pi-hosted a
 - Local ASR with faster-whisper
 - Local LLM with llama.cpp `llama-server` or remote LLM with Ollama Cloud
 - Local TTS with Piper HTTP
+- Optional RAG using Qdrant plus Ollama embeddings
 - Image generation disabled by default so the preset stays fully local
 - Optional systemd startup via the existing chatbot service
 
@@ -59,6 +60,31 @@ The voice selection also sets matching local-language defaults:
 - English voice -> `FASTER_WHISPER_LANGUAGE=en` and English reply prompt
 - Polish voice -> `FASTER_WHISPER_LANGUAGE=pl` and Polish reply prompt
 - German voice -> `FASTER_WHISPER_LANGUAGE=de` and German reply prompt
+
+## Recommended RAG setup
+
+For Raspberry Pi, the best current RAG setup in this repository is:
+
+- Qdrant for vector storage
+- Ollama embeddings with `nomic-embed-text`
+- native Ollama on the Pi or a LAN Ollama embedding endpoint
+- keep the main assistant model separate from the embedding model
+
+If you choose RAG in the installer, it will ask for:
+
+- `QDRANT_HOST`
+- whether embeddings should use native Ollama on the Pi or another Ollama endpoint
+- `OLLAMA_EMBEDDING_ENDPOINT`
+- `OLLAMA_EMBEDDING_MODEL`
+- retrieval tuning values such as threshold and top K
+
+When you choose native Ollama on the Pi, the installer can also install Ollama and pre-pull the embedding model so RAG is ready without any separate LAN machine.
+
+After install, add your knowledge files to the repository `knowledge/` directory and run:
+
+```bash
+bash index_knowledge.sh
+```
 
 ## Fresh Pi OS install
 

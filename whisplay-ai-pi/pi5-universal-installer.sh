@@ -15,6 +15,7 @@ LLM_SERVER_SELECTION="llama.cpp"
 LLM_PROVIDER="llama.cpp"
 SERVE_LLAMA_CPP_VALUE="true"
 SERVE_OLLAMA_VALUE="false"
+SERVE_QDRANT_VALUE="false"
 OLLAMA_ENDPOINT_VALUE="http://192.168.1.100:11434"
 OLLAMA_MODEL_VALUE="gemma3:4b"
 OLLAMA_ENABLE_TOOLS_VALUE="false"
@@ -23,6 +24,21 @@ OPENAI_API_KEY_VALUE=""
 OPENAI_LLM_MODEL_VALUE="deepseek-chat"
 OPENAI_ENABLE_TOOLS_VALUE="false"
 LLAMA_CPP_HF_TOKEN_VALUE="${HF_TOKEN:-}"
+ENABLE_RAG_VALUE="false"
+EMBEDDING_SERVER_VALUE="ollama"
+VECTOR_DB_SERVER_VALUE="qdrant"
+EMBEDDING_RUNTIME_LABEL="LAN Ollama endpoint"
+INSTALL_OLLAMA=false
+DOWNLOAD_OLLAMA_EMBEDDING_MODEL=false
+NATIVE_OLLAMA_FOR_EMBEDDINGS=false
+QDRANT_HOST_VALUE="http://127.0.0.1:6333"
+OLLAMA_EMBEDDING_ENDPOINT_VALUE="http://192.168.1.100:11434"
+OLLAMA_EMBEDDING_MODEL_VALUE="nomic-embed-text"
+RAG_KNOWLEDGE_SCORE_THRESHOLD_VALUE="0.60"
+RAG_KNOWLEDGE_TOP_K_VALUE="5"
+RAG_KNOWLEDGE_MAX_CHUNKS_VALUE="3"
+RAG_KNOWLEDGE_MAX_CHUNKS_PER_SOURCE_VALUE="2"
+RAG_KNOWLEDGE_MAX_CONTEXT_CHARS_VALUE="1800"
 WAKE_WORD_ENGINE="disabled"
 WAKE_WORD_PHRASE=""
 WAKE_WORD_REFERENCE_DIR=""
@@ -158,6 +174,24 @@ print_final_review() {
   print_review_item "Env template" "${CHATBOT_ENV_TEMPLATE}"
   print_review_item "Env output" "${CHATBOT_ENV_FILE}"
 
+  if [ "${ENABLE_RAG_VALUE}" = "true" ]; then
+    print_review_item "RAG enabled" "yes"
+    print_review_item "Serve local Qdrant" "$(format_enabled "${SERVE_QDRANT_VALUE}")"
+    print_review_item "Qdrant host" "${QDRANT_HOST_VALUE}"
+    print_review_item "Embedding runtime" "${EMBEDDING_RUNTIME_LABEL}"
+    print_review_item "Embedding endpoint" "${OLLAMA_EMBEDDING_ENDPOINT_VALUE}"
+    print_review_item "Embedding model" "${OLLAMA_EMBEDDING_MODEL_VALUE}"
+    if [ "${NATIVE_OLLAMA_FOR_EMBEDDINGS}" = "true" ]; then
+      print_review_item "Install native Ollama" "$(format_enabled "${INSTALL_OLLAMA}")"
+      print_review_item "Pre-download embedding" "$(format_enabled "${DOWNLOAD_OLLAMA_EMBEDDING_MODEL}")"
+    fi
+    print_review_item "RAG threshold" "${RAG_KNOWLEDGE_SCORE_THRESHOLD_VALUE}"
+    print_review_item "RAG top K" "${RAG_KNOWLEDGE_TOP_K_VALUE}"
+    print_review_item "RAG max chunks" "${RAG_KNOWLEDGE_MAX_CHUNKS_VALUE}"
+  else
+    print_review_item "RAG enabled" "no"
+  fi
+
   if [ "${INSTALL_WAKE_WORD}" = true ]; then
     print_review_item "Wake engine" "${WAKE_WORD_ENGINE}"
     if [ "${WAKE_WORD_ENGINE}" = "local-wake" ]; then
@@ -177,6 +211,7 @@ reset_install_choices() {
   LLM_PROVIDER="llama.cpp"
   SERVE_LLAMA_CPP_VALUE="true"
   SERVE_OLLAMA_VALUE="false"
+  SERVE_QDRANT_VALUE="false"
   OLLAMA_ENDPOINT_VALUE="http://192.168.1.100:11434"
   OLLAMA_MODEL_VALUE="gemma3:4b"
   OLLAMA_ENABLE_TOOLS_VALUE="false"
@@ -186,6 +221,21 @@ reset_install_choices() {
   OPENAI_LLM_MODEL_VALUE="deepseek-chat"
   OPENAI_ENABLE_TOOLS_VALUE="false"
   LLAMA_CPP_HF_TOKEN_VALUE="${HF_TOKEN:-}"
+  ENABLE_RAG_VALUE="false"
+  EMBEDDING_SERVER_VALUE="ollama"
+  VECTOR_DB_SERVER_VALUE="qdrant"
+  EMBEDDING_RUNTIME_LABEL="LAN Ollama endpoint"
+  INSTALL_OLLAMA=false
+  DOWNLOAD_OLLAMA_EMBEDDING_MODEL=false
+  NATIVE_OLLAMA_FOR_EMBEDDINGS=false
+  QDRANT_HOST_VALUE="http://127.0.0.1:6333"
+  OLLAMA_EMBEDDING_ENDPOINT_VALUE="http://192.168.1.100:11434"
+  OLLAMA_EMBEDDING_MODEL_VALUE="nomic-embed-text"
+  RAG_KNOWLEDGE_SCORE_THRESHOLD_VALUE="0.60"
+  RAG_KNOWLEDGE_TOP_K_VALUE="5"
+  RAG_KNOWLEDGE_MAX_CHUNKS_VALUE="3"
+  RAG_KNOWLEDGE_MAX_CHUNKS_PER_SOURCE_VALUE="2"
+  RAG_KNOWLEDGE_MAX_CONTEXT_CHARS_VALUE="1800"
   WAKE_WORD_ENGINE="disabled"
   WAKE_WORD_PHRASE=""
   WAKE_WORD_REFERENCE_DIR=""
@@ -227,6 +277,139 @@ reset_install_choices() {
   CHATBOT_BATCH="${BRAIN_BATCH_DEFAULT}"
   CHATBOT_UBATCH="${BRAIN_UBATCH_DEFAULT}"
   CHATBOT_MAX_MESSAGES="${BRAIN_MAX_MESSAGES_DEFAULT}"
+}
+
+apply_rag_defaults_for_language() {
+  if [ "${ASR_LANGUAGE}" = "pl" ]; then
+    RAG_KNOWLEDGE_SCORE_THRESHOLD_VALUE="0.55"
+    RAG_KNOWLEDGE_TOP_K_VALUE="6"
+    RAG_KNOWLEDGE_MAX_CHUNKS_VALUE="4"
+    RAG_KNOWLEDGE_MAX_CHUNKS_PER_SOURCE_VALUE="2"
+    RAG_KNOWLEDGE_MAX_CONTEXT_CHARS_VALUE="2200"
+  else
+    RAG_KNOWLEDGE_SCORE_THRESHOLD_VALUE="0.60"
+    RAG_KNOWLEDGE_TOP_K_VALUE="5"
+    RAG_KNOWLEDGE_MAX_CHUNKS_VALUE="3"
+    RAG_KNOWLEDGE_MAX_CHUNKS_PER_SOURCE_VALUE="2"
+    RAG_KNOWLEDGE_MAX_CONTEXT_CHARS_VALUE="1800"
+  fi
+}
+
+pick_rag_config() {
+  if ! prompt_yes_no "Enable RAG knowledge retrieval" "n"; then
+    ENABLE_RAG_VALUE="false"
+    SERVE_QDRANT_VALUE="false"
+    EMBEDDING_RUNTIME_LABEL="LAN Ollama endpoint"
+    INSTALL_OLLAMA=false
+    DOWNLOAD_OLLAMA_EMBEDDING_MODEL=false
+    NATIVE_OLLAMA_FOR_EMBEDDINGS=false
+    return 0
+  fi
+
+  local embedding_choice
+
+  ENABLE_RAG_VALUE="true"
+  EMBEDDING_SERVER_VALUE="ollama"
+  VECTOR_DB_SERVER_VALUE="qdrant"
+  INSTALL_OLLAMA=false
+  DOWNLOAD_OLLAMA_EMBEDDING_MODEL=false
+  NATIVE_OLLAMA_FOR_EMBEDDINGS=false
+  apply_rag_defaults_for_language
+
+  print_section "RAG setup"
+  print_note "Recommended setup: keep Qdrant on the Pi and use a small Ollama embedding model on a local or LAN Ollama server."
+  print_note "Native Ollama on the Pi is different from Ollama Cloud: it only handles local embeddings here, while your main answer model can stay cloud-based."
+  if [ "${ASR_LANGUAGE}" = "pl" ]; then
+    print_note "Polish mode: using lower threshold and slightly broader retrieval defaults to better tolerate voice phrasing variation."
+  fi
+
+  if prompt_yes_no "Start local Qdrant automatically on this Pi with run_chatbot.sh" "y"; then
+    SERVE_QDRANT_VALUE="true"
+    QDRANT_HOST_VALUE="http://127.0.0.1:6333"
+  else
+    SERVE_QDRANT_VALUE="false"
+  fi
+
+  if [ "${SERVE_QDRANT_VALUE}" = "false" ]; then
+    QDRANT_HOST_VALUE=$(prompt_value "Enter Qdrant host" "${QDRANT_HOST_VALUE}")
+  fi
+
+  if [ "${LLM_SERVER_SELECTION}" = "ollama" ]; then
+    embedding_choice=$(choose_from_menu \
+      "Select the Ollama embedding runtime" \
+      "1" \
+      "1|Reuse the same LAN Ollama endpoint as the main LLM" \
+      "2|Native Ollama on this Pi for embeddings" \
+      "3|Different Ollama endpoint")
+  else
+    embedding_choice=$(choose_from_menu \
+      "Select the Ollama embedding runtime" \
+      "1" \
+      "1|Native Ollama on this Pi for embeddings" \
+      "2|Another Ollama endpoint on your LAN or network")
+  fi
+
+  case "${embedding_choice}" in
+    1)
+      if [ "${LLM_SERVER_SELECTION}" = "ollama" ]; then
+        EMBEDDING_RUNTIME_LABEL="Reuse main LLM Ollama endpoint"
+        OLLAMA_EMBEDDING_ENDPOINT_VALUE="${OLLAMA_ENDPOINT_VALUE}"
+      else
+        EMBEDDING_RUNTIME_LABEL="Native Ollama on this Pi"
+        OLLAMA_EMBEDDING_ENDPOINT_VALUE="http://127.0.0.1:11434"
+        NATIVE_OLLAMA_FOR_EMBEDDINGS=true
+        SERVE_OLLAMA_VALUE="false"
+        if command -v ollama >/dev/null 2>&1; then
+          print_note "Existing native Ollama detected on this Pi."
+          if prompt_yes_no "Reinstall or refresh native Ollama during setup" "n"; then
+            INSTALL_OLLAMA=true
+          fi
+        else
+          print_note "Native Ollama was not found. The installer will add it for local embeddings."
+          INSTALL_OLLAMA=true
+        fi
+      fi
+      ;;
+    2)
+      if [ "${LLM_SERVER_SELECTION}" = "ollama" ]; then
+        EMBEDDING_RUNTIME_LABEL="Native Ollama on this Pi"
+        OLLAMA_EMBEDDING_ENDPOINT_VALUE="http://127.0.0.1:11434"
+        NATIVE_OLLAMA_FOR_EMBEDDINGS=true
+        SERVE_OLLAMA_VALUE="false"
+        if command -v ollama >/dev/null 2>&1; then
+          print_note "Existing native Ollama detected on this Pi."
+          if prompt_yes_no "Reinstall or refresh native Ollama during setup" "n"; then
+            INSTALL_OLLAMA=true
+          fi
+        else
+          print_note "Native Ollama was not found. The installer will add it for local embeddings."
+          INSTALL_OLLAMA=true
+        fi
+      else
+        EMBEDDING_RUNTIME_LABEL="Custom Ollama endpoint"
+        OLLAMA_EMBEDDING_ENDPOINT_VALUE=$(prompt_value "Enter Ollama embedding endpoint" "${OLLAMA_EMBEDDING_ENDPOINT_VALUE}")
+      fi
+      ;;
+    3)
+      EMBEDDING_RUNTIME_LABEL="Custom Ollama endpoint"
+      OLLAMA_EMBEDDING_ENDPOINT_VALUE=$(prompt_value "Enter Ollama embedding endpoint" "${OLLAMA_EMBEDDING_ENDPOINT_VALUE}")
+      ;;
+    *)
+      die "Invalid embedding runtime choice"
+      ;;
+  esac
+
+  OLLAMA_EMBEDDING_MODEL_VALUE=$(prompt_value "Enter Ollama embedding model" "${OLLAMA_EMBEDDING_MODEL_VALUE}")
+  if [ "${NATIVE_OLLAMA_FOR_EMBEDDINGS}" = "true" ]; then
+    if prompt_yes_no "Pre-download the Ollama embedding model during install" "y"; then
+      DOWNLOAD_OLLAMA_EMBEDDING_MODEL=true
+    fi
+  fi
+  RAG_KNOWLEDGE_SCORE_THRESHOLD_VALUE=$(prompt_value "RAG score threshold" "${RAG_KNOWLEDGE_SCORE_THRESHOLD_VALUE}")
+  RAG_KNOWLEDGE_TOP_K_VALUE=$(prompt_value "RAG retrieval top K" "${RAG_KNOWLEDGE_TOP_K_VALUE}")
+  RAG_KNOWLEDGE_MAX_CHUNKS_VALUE=$(prompt_value "RAG max chunks in prompt" "${RAG_KNOWLEDGE_MAX_CHUNKS_VALUE}")
+  RAG_KNOWLEDGE_MAX_CHUNKS_PER_SOURCE_VALUE=$(prompt_value "RAG max chunks per source" "${RAG_KNOWLEDGE_MAX_CHUNKS_PER_SOURCE_VALUE}")
+  RAG_KNOWLEDGE_MAX_CONTEXT_CHARS_VALUE=$(prompt_value "RAG max context characters" "${RAG_KNOWLEDGE_MAX_CONTEXT_CHARS_VALUE}")
 }
 
 print_intro() {
@@ -501,6 +684,73 @@ for index, filename in enumerate(files, start=1):
 local_path = os.path.dirname(local_path)
 print(f"faster-whisper model ready: {local_path}", flush=True)
 PY
+}
+
+download_ollama_embedding_model() {
+  local temp_ollama_pid=""
+  local attempt
+
+  if ! command -v ollama >/dev/null 2>&1; then
+    warn "Skipping Ollama embedding pre-download because the ollama command was not found."
+    return 1
+  fi
+
+  if ! command -v curl >/dev/null 2>&1; then
+    warn "Skipping Ollama embedding pre-download because curl is not installed."
+    return 1
+  fi
+
+  if ! curl -fsS "http://127.0.0.1:11434/api/tags" >/dev/null 2>&1; then
+    if command -v systemctl >/dev/null 2>&1 && sudo systemctl list-unit-files ollama.service >/dev/null 2>&1; then
+      log "Starting native Ollama systemd service"
+      sudo systemctl daemon-reload >/dev/null 2>&1 || true
+      sudo systemctl restart ollama >/dev/null 2>&1 || true
+      for attempt in $(seq 1 20); do
+        if curl -fsS "http://127.0.0.1:11434/api/tags" >/dev/null 2>&1; then
+          break
+        fi
+        sleep 1
+      done
+    fi
+  fi
+
+  if ! curl -fsS "http://127.0.0.1:11434/api/tags" >/dev/null 2>&1; then
+    log "Starting a temporary local Ollama server for embedding model download"
+    OLLAMA_HOST=127.0.0.1:11434 ollama serve >/tmp/whisplay-ollama-install.log 2>&1 &
+    temp_ollama_pid=$!
+    for attempt in $(seq 1 20); do
+      if curl -fsS "http://127.0.0.1:11434/api/tags" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+    done
+  fi
+
+  if ! curl -fsS "http://127.0.0.1:11434/api/tags" >/dev/null 2>&1; then
+    warn "Skipping Ollama embedding pre-download because the local Ollama API is not reachable on 127.0.0.1:11434."
+    if [ -n "${temp_ollama_pid}" ]; then
+      kill "${temp_ollama_pid}" >/dev/null 2>&1 || true
+      wait "${temp_ollama_pid}" 2>/dev/null || true
+    fi
+    return 1
+  fi
+
+  log "Pre-downloading Ollama embedding model: ${OLLAMA_EMBEDDING_MODEL_VALUE}"
+  if ! OLLAMA_HOST=127.0.0.1:11434 ollama pull "${OLLAMA_EMBEDDING_MODEL_VALUE}"; then
+    warn "Failed to pre-download Ollama embedding model ${OLLAMA_EMBEDDING_MODEL_VALUE}."
+    if [ -n "${temp_ollama_pid}" ]; then
+      kill "${temp_ollama_pid}" >/dev/null 2>&1 || true
+      wait "${temp_ollama_pid}" 2>/dev/null || true
+    fi
+    return 1
+  fi
+
+  if [ -n "${temp_ollama_pid}" ]; then
+    kill "${temp_ollama_pid}" >/dev/null 2>&1 || true
+    wait "${temp_ollama_pid}" 2>/dev/null || true
+  fi
+
+  return 0
 }
 
 install_local_wake_runtime() {
@@ -1112,6 +1362,7 @@ while true; do
     pick_llama_hf_auth
   fi
   pick_polish_quality_mode
+  pick_rag_config
   if [ "${INSTALL_WAKE_WORD}" = true ]; then
     pick_wake_word_config
   fi
@@ -1187,6 +1438,7 @@ set_env_value "${CHATBOT_ENV_FILE}" "LLM_SERVER" "${LLM_SERVER_SELECTION}"
 set_env_value "${CHATBOT_ENV_FILE}" "TTS_SERVER" "piper-http"
 set_env_value "${CHATBOT_ENV_FILE}" "SERVE_LLAMA_CPP" "${SERVE_LLAMA_CPP_VALUE}"
 set_env_value "${CHATBOT_ENV_FILE}" "SERVE_OLLAMA" "${SERVE_OLLAMA_VALUE}"
+set_env_value "${CHATBOT_ENV_FILE}" "SERVE_QDRANT" "${SERVE_QDRANT_VALUE}"
 if [ "${LLM_SERVER_SELECTION}" = "llama.cpp" ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_HF_REPO" "${LLAMA_HF_REPO}"
   if [ -n "${LLAMA_CPP_HF_TOKEN_VALUE:-}" ]; then
@@ -1207,6 +1459,19 @@ set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_MODEL_SIZE_OR_PATH" "${ASR_M
 set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_LANGUAGE" "${ASR_LANGUAGE}"
 set_env_value "${CHATBOT_ENV_FILE}" "PIPER_HTTP_MODEL" "${PIPER_DIR}/${PIPER_VOICE}"
 set_env_value "${CHATBOT_ENV_FILE}" "SYSTEM_PROMPT" "${ASSISTANT_SYSTEM_PROMPT}"
+set_env_value "${CHATBOT_ENV_FILE}" "ENABLE_RAG" "${ENABLE_RAG_VALUE}"
+if [ "${ENABLE_RAG_VALUE}" = "true" ]; then
+  set_env_value "${CHATBOT_ENV_FILE}" "EMBEDDING_SERVER" "${EMBEDDING_SERVER_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "VECTOR_DB_SERVER" "${VECTOR_DB_SERVER_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "QDRANT_HOST" "${QDRANT_HOST_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "OLLAMA_EMBEDDING_ENDPOINT" "${OLLAMA_EMBEDDING_ENDPOINT_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "OLLAMA_EMBEDDING_MODEL" "${OLLAMA_EMBEDDING_MODEL_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "RAG_KNOWLEDGE_SCORE_THRESHOLD" "${RAG_KNOWLEDGE_SCORE_THRESHOLD_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "RAG_KNOWLEDGE_TOP_K" "${RAG_KNOWLEDGE_TOP_K_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "RAG_KNOWLEDGE_MAX_CHUNKS" "${RAG_KNOWLEDGE_MAX_CHUNKS_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "RAG_KNOWLEDGE_MAX_CHUNKS_PER_SOURCE" "${RAG_KNOWLEDGE_MAX_CHUNKS_PER_SOURCE_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "RAG_KNOWLEDGE_MAX_CONTEXT_CHARS" "${RAG_KNOWLEDGE_MAX_CONTEXT_CHARS_VALUE}"
+fi
 if [ "${LLM_SERVER_SELECTION}" = "ollama" ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "OLLAMA_ENDPOINT" "${OLLAMA_ENDPOINT_VALUE}"
   set_env_value "${CHATBOT_ENV_FILE}" "OLLAMA_MODEL" "${OLLAMA_MODEL_VALUE}"
@@ -1270,7 +1535,7 @@ if [ "${INSTALL_CHATBOT_DEPS}" = true ]; then
   bash install_dependencies.sh
 fi
 
-chmod +x "${PROJECT_ROOT}/scripts/serve_llama_cpp.sh" "${PROJECT_ROOT}/scripts/install_llama_cpp.sh" 2>/dev/null || true
+chmod +x "${PROJECT_ROOT}/scripts/serve_llama_cpp.sh" "${PROJECT_ROOT}/scripts/install_llama_cpp.sh" "${PROJECT_ROOT}/scripts/install_ollama.sh" 2>/dev/null || true
 
 if [ "${INSTALL_LOCAL_ASR}" = true ]; then
   log "Installing faster-whisper dependencies"
@@ -1299,6 +1564,11 @@ if [ "${INSTALL_LOCAL_TTS}" = true ]; then
   )
 fi
 
+if [ "${INSTALL_OLLAMA}" = true ]; then
+  log "Installing native Ollama for local embeddings"
+  bash "${PROJECT_ROOT}/scripts/install_ollama.sh"
+fi
+
 if [ "${INSTALL_LLAMA_CPP}" = true ]; then
   ensure_repo "${LLAMA_DIR}" "${LLAMA_REPO_URL}" "llama.cpp"
   log "Building llama.cpp"
@@ -1309,6 +1579,12 @@ if [ "${DOWNLOAD_LLM_MODEL}" = true ]; then
   if ! download_llama_cpp_model; then
     warn "Skipping llama.cpp pre-download. The assistant can still work; the first model start may just take longer."
     warn "If needed later, start the chatbot once or run /usr/local/bin/llama-server -hf ${LLAMA_HF_REPO} manually on the Pi to populate the cache."
+  fi
+fi
+
+if [ "${DOWNLOAD_OLLAMA_EMBEDDING_MODEL}" = true ]; then
+  if ! download_ollama_embedding_model; then
+    warn "Skipping Ollama embedding model pre-download. RAG can still work after install once you run: ollama pull ${OLLAMA_EMBEDDING_MODEL_VALUE}"
   fi
 fi
 

@@ -131,6 +131,34 @@ Notes:
 - End-to-end latency will depend on Wi-Fi quality and Ollama Cloud response time, so it will feel less instant than a small local model.
 - If you want vision through Ollama too, set `VISION_SERVER=ollama` and optionally `OLLAMA_VISION_MODEL=gemma3:27b-cloud` if that model path is enabled for your account.
 
+## RAG Knowledge Base
+
+The project includes built-in RAG support. The recommended setup for Raspberry Pi is:
+
+- Qdrant as the vector database
+- Ollama embeddings with a lightweight embedding model such as `nomic-embed-text`
+- your main answer model kept separate from embeddings, for example `gemma3:27b-cloud` for final responses
+
+Recommended flow:
+
+1. Put `.txt` or `.md` files into the `knowledge/` directory.
+2. Enable RAG in `.env`.
+3. Configure `QDRANT_HOST`, `OLLAMA_EMBEDDING_ENDPOINT`, and `OLLAMA_EMBEDDING_MODEL`.
+4. Build the knowledge index with `bash index_knowledge.sh`.
+
+The Pi installer now includes a RAG setup step and writes the relevant `.env` values for you.
+
+For embeddings, the installer now supports two practical paths:
+
+- native Ollama on the Pi itself for local `nomic-embed-text` style embeddings
+- another Ollama endpoint on your LAN if you want embeddings off-device
+
+If you choose native Ollama in the installer, it uses `scripts/install_ollama.sh`, points `OLLAMA_EMBEDDING_ENDPOINT` at `http://127.0.0.1:11434`, and can pre-download the embedding model during setup.
+
+If you want the easiest local or LAN vector database setup, the repository Docker compose stack now includes a `qdrant` service listening on port `6333`.
+
+If you enable RAG in the Pi installer, it can also set `SERVE_QDRANT=true` so `bash run_chatbot.sh` starts the local Qdrant container automatically when Docker Compose is available.
+
 ## Build After Code Changes
 
 If you make changes to the node code or just pull the new code from this repository, you need to rebuild the project. You can do this by running:
