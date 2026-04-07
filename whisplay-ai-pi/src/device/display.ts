@@ -161,10 +161,15 @@ export class WhisplayDisplay {
     this.pythonProcess = exec(command, (error, stdout, stderr) => {
       if (error) {
         console.error("Error starting Python process:", error);
+        this.pythonProcess = null;
         return;
       }
       console.log("Python process stdout:", stdout);
       console.error("Python process stderr:", stderr);
+      this.pythonProcess = null;
+    });
+    this.pythonProcess.on("exit", () => {
+      this.pythonProcess = null;
     });
     this.pythonProcess.stdout.on("data", (data: any) =>
       console.log(data.toString()),
@@ -180,8 +185,18 @@ export class WhisplayDisplay {
     }
     if (this.pythonProcess) {
       console.log("Killing Python process...", this.pythonProcess.pid);
-      this.pythonProcess.kill();
-      process.kill(this.pythonProcess.pid, "SIGKILL");
+      try {
+        this.pythonProcess.kill();
+      } catch {
+        // ignore if the child has already exited
+      }
+      if (this.pythonProcess.pid) {
+        try {
+          process.kill(this.pythonProcess.pid, "SIGKILL");
+        } catch {
+          // ignore ESRCH when the OS process is already gone
+        }
+      }
       this.pythonProcess = null;
     }
   }

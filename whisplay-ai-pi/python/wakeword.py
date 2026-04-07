@@ -80,6 +80,7 @@ def run_local_wake() -> int:
         )
 
     threshold = os.getenv("WAKE_WORD_THRESHOLD", "0.12")
+    cooldown_sec = float(os.getenv("WAKE_WORD_COOLDOWN_SEC", "2.0"))
     buffer_size = os.getenv("WAKE_WORD_LOCAL_WAKE_BUFFER_SIZE", "1.8")
     slide_size = os.getenv("WAKE_WORD_LOCAL_WAKE_SLIDE_SIZE", "0.25")
     method = os.getenv("WAKE_WORD_LOCAL_WAKE_METHOD", "embedding").strip() or "embedding"
@@ -134,6 +135,8 @@ def run_local_wake() -> int:
     if process.stdout is None:
         raise RuntimeError("local-wake process did not expose stdout")
 
+    last_trigger = 0.0
+
     for line in iter(process.stdout.readline, ""):
         message = line.strip()
         if not message:
@@ -148,6 +151,10 @@ def run_local_wake() -> int:
         distance = payload.get("distance")
         timestamp = payload.get("timestamp")
         if distance is not None:
+            now = time.time()
+            if now - last_trigger < cooldown_sec:
+                continue
+            last_trigger = now
             print(f"WAKE {phrase} {distance}", flush=True)
             if is_trace_enabled():
                 log(
