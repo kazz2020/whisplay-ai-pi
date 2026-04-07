@@ -131,6 +131,16 @@ Notes:
 - End-to-end latency will depend on Wi-Fi quality and Ollama Cloud response time, so it will feel less instant than a small local model.
 - If you want vision through Ollama too, set `VISION_SERVER=ollama` and optionally `OLLAMA_VISION_MODEL=gemma3:27b-cloud` if that model path is enabled for your account.
 
+For Polish voice use on a Pi 5 8GB, the practical sweet spot is:
+
+- `FASTER_WHISPER_LANGUAGE=pl`
+- `FASTER_WHISPER_MODEL_SIZE_OR_PATH=base` for the best speed or `small` for higher recognition quality
+- `LLM_SERVER=ollama-cloud` with `OLLAMA_MODEL=gemma3:27b-cloud`
+- `ENABLE_THINKING=false` and `USE_CAPTURED_IMAGE_IN_CHAT=false` to keep latency and RAM usage down
+- short chat history so each request stays small
+
+The Pi installer now includes a Polish speed profile and an optional Raspberry Pi memory tuning step that configures zram plus a small disk swap fallback.
+
 ## RAG Knowledge Base
 
 The project includes built-in RAG support. The recommended setup for Raspberry Pi is:

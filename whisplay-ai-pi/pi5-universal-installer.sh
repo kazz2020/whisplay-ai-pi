@@ -23,6 +23,8 @@ OPENAI_API_BASE_URL_VALUE="https://api.deepseek.com/v1"
 OPENAI_API_KEY_VALUE=""
 OPENAI_LLM_MODEL_VALUE="deepseek-chat"
 OPENAI_ENABLE_TOOLS_VALUE="false"
+ENABLE_THINKING_VALUE="false"
+USE_CAPTURED_IMAGE_IN_CHAT_VALUE="false"
 LLAMA_CPP_HF_TOKEN_VALUE="${HF_TOKEN:-}"
 ENABLE_RAG_VALUE="false"
 EMBEDDING_SERVER_VALUE="ollama"
@@ -31,6 +33,12 @@ EMBEDDING_RUNTIME_LABEL="LAN Ollama endpoint"
 INSTALL_OLLAMA=false
 DOWNLOAD_OLLAMA_EMBEDDING_MODEL=false
 NATIVE_OLLAMA_FOR_EMBEDDINGS=false
+APPLY_PI_MEMORY_TUNING=false
+PI_MEMORY_PROFILE_LABEL="disabled"
+PI_ZRAM_PERCENT_VALUE="50"
+PI_ZRAM_ALGO_VALUE="lz4"
+PI_DISK_SWAP_MB_VALUE="1024"
+PI_SWAPPINESS_VALUE="100"
 QDRANT_HOST_VALUE="http://127.0.0.1:6333"
 OLLAMA_EMBEDDING_ENDPOINT_VALUE="http://192.168.1.100:11434"
 OLLAMA_EMBEDDING_MODEL_VALUE="nomic-embed-text"
@@ -169,7 +177,14 @@ print_final_review() {
   print_review_item "ASR language" "${ASR_LANGUAGE}"
   print_review_item "Piper voice" "${PIPER_VOICE}"
   print_review_item "Piper dir" "${PIPER_DIR}"
+  print_review_item "Thinking mode" "${ENABLE_THINKING_VALUE}"
+  print_review_item "Use camera in chat" "${USE_CAPTURED_IMAGE_IN_CHAT_VALUE}"
   print_review_item "Chat history limit" "${CHATBOT_MAX_MESSAGES}"
+  print_review_item "Pi memory tuning" "${PI_MEMORY_PROFILE_LABEL}"
+  if [ "${APPLY_PI_MEMORY_TUNING}" = true ]; then
+    print_review_item "ZRAM / swap" "${PI_ZRAM_PERCENT_VALUE}% / ${PI_DISK_SWAP_MB_VALUE} MB"
+    print_review_item "Swappiness" "${PI_SWAPPINESS_VALUE}"
+  fi
   print_review_item "Driver repo dir" "${DRIVER_DIR}"
   print_review_item "Env template" "${CHATBOT_ENV_TEMPLATE}"
   print_review_item "Env output" "${CHATBOT_ENV_FILE}"
@@ -220,6 +235,8 @@ reset_install_choices() {
   OPENAI_API_KEY_VALUE=""
   OPENAI_LLM_MODEL_VALUE="deepseek-chat"
   OPENAI_ENABLE_TOOLS_VALUE="false"
+  ENABLE_THINKING_VALUE="false"
+  USE_CAPTURED_IMAGE_IN_CHAT_VALUE="false"
   LLAMA_CPP_HF_TOKEN_VALUE="${HF_TOKEN:-}"
   ENABLE_RAG_VALUE="false"
   EMBEDDING_SERVER_VALUE="ollama"
@@ -228,6 +245,12 @@ reset_install_choices() {
   INSTALL_OLLAMA=false
   DOWNLOAD_OLLAMA_EMBEDDING_MODEL=false
   NATIVE_OLLAMA_FOR_EMBEDDINGS=false
+  APPLY_PI_MEMORY_TUNING=false
+  PI_MEMORY_PROFILE_LABEL="disabled"
+  PI_ZRAM_PERCENT_VALUE="50"
+  PI_ZRAM_ALGO_VALUE="lz4"
+  PI_DISK_SWAP_MB_VALUE="1024"
+  PI_SWAPPINESS_VALUE="100"
   QDRANT_HOST_VALUE="http://127.0.0.1:6333"
   OLLAMA_EMBEDDING_ENDPOINT_VALUE="http://192.168.1.100:11434"
   OLLAMA_EMBEDDING_MODEL_VALUE="nomic-embed-text"
@@ -410,6 +433,67 @@ pick_rag_config() {
   RAG_KNOWLEDGE_MAX_CHUNKS_VALUE=$(prompt_value "RAG max chunks in prompt" "${RAG_KNOWLEDGE_MAX_CHUNKS_VALUE}")
   RAG_KNOWLEDGE_MAX_CHUNKS_PER_SOURCE_VALUE=$(prompt_value "RAG max chunks per source" "${RAG_KNOWLEDGE_MAX_CHUNKS_PER_SOURCE_VALUE}")
   RAG_KNOWLEDGE_MAX_CONTEXT_CHARS_VALUE=$(prompt_value "RAG max context characters" "${RAG_KNOWLEDGE_MAX_CONTEXT_CHARS_VALUE}")
+}
+
+pick_polish_speed_profile() {
+  local choice
+
+  if [ "${ASR_LANGUAGE}" != "pl" ]; then
+    return 0
+  fi
+
+  choice=$(choose_from_menu \
+    "Select the Polish speed and quality profile" \
+    "1" \
+    "1|Recommended for Pi 5 8GB with smart cloud LLM: base ASR + short history" \
+    "2|Higher Polish accuracy: small ASR + shorter history" \
+    "3|Keep my manual ASR and history choices")
+
+  case "${choice}" in
+    1)
+      ASR_MODEL="base"
+      BRAIN_MAX_MESSAGES_DEFAULT="6"
+      ENABLE_THINKING_VALUE="false"
+      USE_CAPTURED_IMAGE_IN_CHAT_VALUE="false"
+      ;;
+    2)
+      ASR_MODEL="small"
+      BRAIN_MAX_MESSAGES_DEFAULT="5"
+      ENABLE_THINKING_VALUE="false"
+      USE_CAPTURED_IMAGE_IN_CHAT_VALUE="false"
+      ;;
+    3)
+      ;;
+    *)
+      die "Invalid Polish profile choice"
+      ;;
+  esac
+
+  if [ "${LLM_SERVER_SELECTION}" = "ollama-cloud" ] && [ -z "${OLLAMA_MODEL_VALUE:-}" ]; then
+    OLLAMA_MODEL_VALUE="gemma3:27b-cloud"
+  fi
+}
+
+pick_pi_memory_tuning() {
+  if ! prompt_yes_no "Apply Raspberry Pi 5 memory tuning for smoother ASR and indexing" "y"; then
+    APPLY_PI_MEMORY_TUNING=false
+    PI_MEMORY_PROFILE_LABEL="disabled"
+    return 0
+  fi
+
+  APPLY_PI_MEMORY_TUNING=true
+  PI_MEMORY_PROFILE_LABEL="zram + small disk swap"
+
+  if [ "${ASR_LANGUAGE}" = "pl" ]; then
+    PI_ZRAM_PERCENT_VALUE="50"
+    PI_DISK_SWAP_MB_VALUE="1024"
+    PI_SWAPPINESS_VALUE="100"
+  fi
+
+  PI_ZRAM_PERCENT_VALUE=$(prompt_value "ZRAM percent of RAM" "${PI_ZRAM_PERCENT_VALUE}")
+  PI_ZRAM_ALGO_VALUE=$(prompt_value "ZRAM compression algorithm" "${PI_ZRAM_ALGO_VALUE}")
+  PI_DISK_SWAP_MB_VALUE=$(prompt_value "Disk swap size in MB" "${PI_DISK_SWAP_MB_VALUE}")
+  PI_SWAPPINESS_VALUE=$(prompt_value "Linux swappiness" "${PI_SWAPPINESS_VALUE}")
 }
 
 print_intro() {
@@ -1362,7 +1446,9 @@ while true; do
     pick_llama_hf_auth
   fi
   pick_polish_quality_mode
+  pick_polish_speed_profile
   pick_rag_config
+  pick_pi_memory_tuning
   if [ "${INSTALL_WAKE_WORD}" = true ]; then
     pick_wake_word_config
   fi
@@ -1459,6 +1545,8 @@ set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_MODEL_SIZE_OR_PATH" "${ASR_M
 set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_LANGUAGE" "${ASR_LANGUAGE}"
 set_env_value "${CHATBOT_ENV_FILE}" "PIPER_HTTP_MODEL" "${PIPER_DIR}/${PIPER_VOICE}"
 set_env_value "${CHATBOT_ENV_FILE}" "SYSTEM_PROMPT" "${ASSISTANT_SYSTEM_PROMPT}"
+set_env_value "${CHATBOT_ENV_FILE}" "ENABLE_THINKING" "${ENABLE_THINKING_VALUE}"
+set_env_value "${CHATBOT_ENV_FILE}" "USE_CAPTURED_IMAGE_IN_CHAT" "${USE_CAPTURED_IMAGE_IN_CHAT_VALUE}"
 set_env_value "${CHATBOT_ENV_FILE}" "ENABLE_RAG" "${ENABLE_RAG_VALUE}"
 if [ "${ENABLE_RAG_VALUE}" = "true" ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "EMBEDDING_SERVER" "${EMBEDDING_SERVER_VALUE}"
@@ -1535,7 +1623,7 @@ if [ "${INSTALL_CHATBOT_DEPS}" = true ]; then
   bash install_dependencies.sh
 fi
 
-chmod +x "${PROJECT_ROOT}/scripts/serve_llama_cpp.sh" "${PROJECT_ROOT}/scripts/install_llama_cpp.sh" "${PROJECT_ROOT}/scripts/install_ollama.sh" 2>/dev/null || true
+chmod +x "${PROJECT_ROOT}/scripts/serve_llama_cpp.sh" "${PROJECT_ROOT}/scripts/install_llama_cpp.sh" "${PROJECT_ROOT}/scripts/install_ollama.sh" "${PROJECT_ROOT}/scripts/optimize_pi_memory.sh" 2>/dev/null || true
 
 if [ "${INSTALL_LOCAL_ASR}" = true ]; then
   log "Installing faster-whisper dependencies"
@@ -1562,6 +1650,15 @@ if [ "${INSTALL_LOCAL_TTS}" = true ]; then
     cd "${PIPER_DIR}"
     python3 -m piper.download_voices "${PIPER_VOICE}"
   )
+fi
+
+if [ "${APPLY_PI_MEMORY_TUNING}" = true ]; then
+  log "Applying Raspberry Pi memory tuning"
+  ZRAM_PERCENT="${PI_ZRAM_PERCENT_VALUE}" \
+    ZRAM_ALGO="${PI_ZRAM_ALGO_VALUE}" \
+    DISK_SWAP_MB="${PI_DISK_SWAP_MB_VALUE}" \
+    SWAPPINESS="${PI_SWAPPINESS_VALUE}" \
+    bash "${PROJECT_ROOT}/scripts/optimize_pi_memory.sh"
 fi
 
 if [ "${INSTALL_OLLAMA}" = true ]; then

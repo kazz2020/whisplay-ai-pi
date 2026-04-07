@@ -80,6 +80,19 @@ If you choose RAG in the installer, it will ask for:
 
 When you choose native Ollama on the Pi, the installer can also install Ollama and pre-pull the embedding model so RAG is ready without any separate LAN machine.
 
+## Recommended Polish cloud setup on Pi 5 8GB
+
+If your priority is good Polish recognition plus a smarter remote model, the recommended setup in this repo is:
+
+- `FASTER_WHISPER_LANGUAGE=pl`
+- `FASTER_WHISPER_MODEL_SIZE_OR_PATH=base` for better speed or `small` for better recognition quality
+- `LLM_SERVER=ollama-cloud`
+- `OLLAMA_MODEL=gemma3:27b-cloud`
+- `ENABLE_THINKING=false`
+- `USE_CAPTURED_IMAGE_IN_CHAT=false`
+
+The installer now has a Polish speed profile for this and can also apply Pi memory tuning with zram and a modest disk swap fallback. This is useful for smoother ASR, indexing, and package builds on an 8GB Raspberry Pi 5.
+
 After install, add your knowledge files to the repository `knowledge/` directory and run:
 
 ```bash
