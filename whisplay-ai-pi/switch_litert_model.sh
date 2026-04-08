@@ -95,6 +95,24 @@ print_banner() {
   hr
 }
 
+canonicalize_path() {
+  local path_value="$1"
+
+  if [ -z "${path_value}" ]; then
+    return 0
+  fi
+
+  if [ -e "${path_value}" ]; then
+    (
+      cd "$(dirname "${path_value}")" 2>/dev/null &&
+        printf '%s/%s\n' "$(pwd)" "$(basename "${path_value}")"
+    )
+    return 0
+  fi
+
+  printf '%s\n' "${path_value}"
+}
+
 list_local_models() {
   local target_root="$1"
   local active_model_path="$2"
@@ -106,7 +124,7 @@ list_local_models() {
   local display_path
 
   normalized_target_root=$(cd "${target_root}" 2>/dev/null && pwd || printf '%s' "${target_root}")
-  normalized_active_path=$(cd "$(dirname "${active_model_path}")" 2>/dev/null && pwd && printf '/%s' "$(basename "${active_model_path}")" || printf '%s' "${active_model_path}")
+  normalized_active_path=$(canonicalize_path "${active_model_path}")
 
   section "Local LiteRT Models"
   status_line "Scan root" "${normalized_target_root}"
@@ -305,6 +323,7 @@ current_backend=$(get_env_value "LITERT_LM_BACKEND" || true)
 current_cache_dir=$(get_env_value "LITERT_LM_CACHE_DIR" || true)
 hf_token=$(get_env_value "HF_TOKEN" || true)
 target_root=$(get_env_value "LITERT_LM_MODEL_DIR" || true)
+requested_llm_server="${current_llm_server:-}"
 
 if [ -z "${target_root}" ]; then
   target_root="${HOME}/litert-lm-models"
@@ -327,9 +346,8 @@ if [ "${current_llm_server}" != "litert-lm" ]; then
   if ! confirm "Switch LLM_SERVER to litert-lm and continue" "y"; then
     die "Aborted before changing provider."
   fi
-  set_env_value "LLM_SERVER" "litert-lm"
-  current_llm_server="litert-lm"
-  success "LLM_SERVER updated to litert-lm."
+  requested_llm_server="litert-lm"
+  note "LLM_SERVER will be updated to litert-lm when you confirm the final review."
 fi
 
 declare -a repos=()
@@ -429,6 +447,7 @@ fi
 set_env_value "LLM_SERVER" "litert-lm"
 set_env_value "LITERT_LM_BACKEND" "${selected_backend}"
 set_env_value "LITERT_LM_CACHE_DIR" "${selected_cache_dir}"
+set_env_value "LITERT_LM_MODEL_DIR" "${target_root}"
 set_env_value "LITERT_LM_MODEL_PATH" "${selected_model_path}"
 if [ -n "${selected_repo}" ]; then
   set_env_value "LITERT_LM_MODEL_REPO" "${selected_repo}"
