@@ -854,6 +854,22 @@ ensure_litert_hf_auth() {
     return 0
   fi
 
+  if prompt_yes_no "Switch to the ungated Gemma 3n E4B LiteRT mirror instead (larger than E2B, no Google gating)" "y"; then
+    LITERT_LM_MODEL_REPO_VALUE="HGYT01/Featured_Model_litert-lm"
+    LITERT_LM_MODEL_FILENAME_VALUE="gemma-3n-E4B-it-int4.litertlm"
+    LITERT_LM_MODEL_LABEL="Gemma 3n E4B LiteRT-LM"
+    BRAIN_PROFILE_NAME="litert-balanced-multilingual"
+    BRAIN_PROFILE_LABEL="LiteRT Multilingual"
+    BRAIN_THREADS_DEFAULT="4"
+    BRAIN_CONTEXT_DEFAULT="1792"
+    BRAIN_BATCH_DEFAULT="160"
+    BRAIN_UBATCH_DEFAULT="80"
+    BRAIN_MAX_MESSAGES_DEFAULT="8"
+    print_note "Switched LiteRT pre-download to HGYT01/Featured_Model_litert-lm."
+    print_note "This keeps you on a Gemma 3n model without the Google gating issue."
+    return 0
+  fi
+
   if prompt_yes_no "Switch to the ungated LiteRT Community Gemma 4 E2B repo instead (larger download, no Google gating)" "y"; then
     LITERT_LM_MODEL_REPO_VALUE="litert-community/gemma-4-E2B-it-litert-lm"
     LITERT_LM_MODEL_FILENAME_VALUE="gemma-4-E2B-it.litertlm"
@@ -1401,6 +1417,9 @@ download_litert_lm_model() {
     google/gemma-*)
       warn "Selected LiteRT-LM model is in a gated Google Gemma repo and needs approved Hugging Face access plus an hf_ token."
       ;;
+    HGYT01/Featured_Model_litert-lm)
+      warn "Selected LiteRT-LM model uses the HGYT01 Featured_Model_litert-lm mirror. Verify the mirrored file matches the model you expect before production use."
+      ;;
     litert-community/gemma-4-E2B-it-litert-lm|litert-community/gemma-4-E4B-it-litert-lm)
       warn "Selected LiteRT-LM model is a multi-GB Gemma 4 build. On a Pi 5 this can look hung during download and may cause heavy IO pressure."
       ;;
@@ -1555,7 +1574,7 @@ pick_litert_model() {
     "2|Fast: Gemma 3n E2B LiteRT-LM (recommended for Pi 5)" \
     "3|Polish-first: Gemma 3n E2B LiteRT-LM" \
     "4|German-first: Gemma 3n E2B LiteRT-LM" \
-    "5|Balanced multilingual: Gemma 3n E4B LiteRT-LM" \
+    "5|Balanced multilingual: Gemma 3n E4B LiteRT-LM (ungated mirror)" \
     "6|Balanced stable: Gemma 4 E2B LiteRT-LM" \
     "7|Higher quality: Gemma 4 E4B LiteRT-LM" \
     "8|Custom LiteRT-LM Hugging Face repo")
@@ -1621,8 +1640,8 @@ pick_litert_model() {
       LLM_PROVIDER="litert-lm"
       BRAIN_PROFILE_NAME="litert-balanced-multilingual"
       BRAIN_PROFILE_LABEL="LiteRT Multilingual"
-      LITERT_LM_MODEL_REPO_VALUE="google/gemma-3n-E4B-it-litert-lm"
-      LITERT_LM_MODEL_FILENAME_VALUE=""
+      LITERT_LM_MODEL_REPO_VALUE="HGYT01/Featured_Model_litert-lm"
+      LITERT_LM_MODEL_FILENAME_VALUE="gemma-3n-E4B-it-int4.litertlm"
       LITERT_LM_MODEL_LABEL="Gemma 3n E4B LiteRT-LM"
       BRAIN_THREADS_DEFAULT="4"
       BRAIN_CONTEXT_DEFAULT="1792"
