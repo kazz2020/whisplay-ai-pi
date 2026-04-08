@@ -53,6 +53,14 @@ The installer also now lets you choose the LLM runtime mode:
 - `DeepSeek API via OpenAI-compatible endpoint`: online mode for users who already have a DeepSeek key
 =======
 When you choose `Ollama Cloud`, the installer instead writes `LLM_SERVER=ollama-cloud`, `OLLAMA_ENDPOINT`, `OLLAMA_MODEL`, and `OLLAMA_API_KEY` into `.env`, and skips local llama.cpp setup.
+
+If you want to change the cloud model later without rerunning the full installer, run:
+
+```bash
+bash switch_ollama_model.sh
+```
+
+This updates `OLLAMA_MODEL` in `.env` and optionally restarts `chatbot.service`.
 >>>>>>> 9d61f47 (ollama cloud added)
 
 The voice selection also sets matching local-language defaults:

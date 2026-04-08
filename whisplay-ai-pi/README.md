@@ -122,6 +122,14 @@ bash scripts/setup_local_wakeword.sh
 
 The Pi 5 installer now also includes an `Ollama Cloud` brain option. If you choose it, the installer prompts for `OLLAMA_API_KEY` and writes the cloud model settings into `.env` automatically.
 
+After installation, you can switch to another Ollama model later by running:
+
+```bash
+bash switch_ollama_model.sh
+```
+
+The script reads your current `.env`, shows a numbered menu of models from the configured Ollama endpoint when available, falls back to built-in cloud presets if listing fails, updates `OLLAMA_MODEL`, and can restart `chatbot.service` for you.
+
 ## Ollama Cloud on Pi 5
 
 If you want the Pi 5 device experience but do not want to run the LLM locally, you can use Ollama Cloud with the built-in Ollama provider. This keeps ASR, TTS, button handling, display, and device control on the Pi, while the text generation runs remotely.
