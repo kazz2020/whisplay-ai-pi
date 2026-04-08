@@ -1,4 +1,5 @@
 import { StreamResponser } from "../StreamResponsor";
+import { Message } from "../../type";
 
 export type FlowName =
   | "sleep"
@@ -38,6 +39,7 @@ export interface ChatFlowContext {
   isFromWakeListening: boolean;
   enterMusicAfterAnswer: boolean;
   musicDisplayText: string;
+  conversationMessages: Message[];
 
   transitionTo: (flowName: FlowName) => void;
   recognizeAudio: (path: string, isFromAutoListening?: boolean) => Promise<string>;
@@ -50,4 +52,8 @@ export interface ChatFlowContext {
   interruptCurrentAnswer: () => void;
   startResponseInterruptMonitor: (onInterrupt: () => void) => void;
   stopResponseInterruptMonitor: () => void;
+  prepareConversationPrompt: (userText: string, knowledgePrompt?: string) => Message[];
+  appendPendingAssistantText: (text: string) => void;
+  commitPendingAssistantResponse: () => void;
+  clearPendingAssistantResponse: () => void;
 }

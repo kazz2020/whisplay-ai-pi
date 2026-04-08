@@ -1,5 +1,5 @@
 import moment from "moment";
-import { compact, noop } from "lodash";
+import { noop } from "lodash";
 import {
   onButtonPressed,
   onButtonReleased,
@@ -335,7 +335,6 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
       partial,
       endPartial,
       getPlayEndPromise,
-      stop: stopPlaying,
     } = ctx.streamResponser;
     ctx.partialThinking = "";
     ctx.thinkingSentences = [];
@@ -358,24 +357,19 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
         display({
           rag_icon_visible: Boolean(enableRAG && knowledgePrompt),
         });
-        const prompt: {
-          role: "system" | "user";
-          content: string;
-        }[] = compact([
-          knowledgePrompt
-            ? {
-              role: "system",
-              content: knowledgePrompt,
-            }
-            : null,
-          {
-            role: "user",
-            content: ctx.asrText,
-          },
-        ]);
+        const prompt = ctx.prepareConversationPrompt(
+          ctx.asrText,
+          knowledgePrompt,
+        );
         chatWithLLMStream(
           prompt,
-          (text) => currentAnswerId === ctx.answerId && partial(text),
+          (text) => {
+            if (currentAnswerId !== ctx.answerId) {
+              return;
+            }
+            ctx.appendPendingAssistantText(text);
+            partial(text);
+          },
           () => currentAnswerId === ctx.answerId && endPartial(),
           (partialThinking) =>
             currentAnswerId === ctx.answerId &&
@@ -417,6 +411,7 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
       });
     getPlayEndPromise().then(() => {
       if (ctx.currentFlowName === "answer" && currentAnswerId === ctx.answerId) {
+        ctx.commitPendingAssistantResponse();
         clearPendingCapturedImgForChat();
         display({ image_icon_visible: false });
         if (ctx.wakeSessionActive || ctx.endAfterAnswer) {
@@ -487,6 +482,7 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
     }
 
     if (replyText) {
+      ctx.clearPendingAssistantResponse();
       void ctx.streamExternalReply(replyText, replyEmoji);
       ctx.startResponseInterruptMonitor(interruptToListening);
       ctx.streamResponser.getPlayEndPromise().then(() => {

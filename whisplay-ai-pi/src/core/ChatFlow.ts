@@ -4,7 +4,7 @@ import {
   splitSentences,
 } from "./../utils/index";
 import { display } from "../device/display";
-import { recognizeAudio, ttsProcessor } from "../cloud-api/server";
+import { recognizeAudio, resetChatHistory, ttsProcessor } from "../cloud-api/server";
 import { isImMode } from "../cloud-api/llm";
 import { DEFAULT_EMOJI, extractEmojis } from "../utils";
 import { StreamResponser } from "./StreamResponsor";
@@ -21,8 +21,357 @@ import {
   detectCurrentInputLevel,
   getDynamicVoiceDetectLevel,
 } from "../device/voice-detect";
+import { shouldResetChatHistory } from "../config/llm-config";
+import { Message } from "../type";
 
 dotEnv.config();
+
+type AmendmentMode = "add" | "replace" | "refine";
+
+const normalizeWhitespace = (text: string): string =>
+  text.replace(/\s+/g, " ").trim();
+
+const trimTrailingPunctuation = (text: string): string =>
+  text.replace(/[\s,;:.!?-]+$/g, "").trim();
+
+const uppercaseFirst = (text: string): string =>
+  text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+
+const lowercaseFirst = (text: string): string =>
+  text ? text.charAt(0).toLowerCase() + text.slice(1) : text;
+
+const polishAddPrefixes = [
+  /^i\s+jeszcze\s+/i,
+  /^jeszcze\s+/i,
+  /^dodaj\s+(?:jeszcze\s+|też\s+|także\s+)?/i,
+  /^dopisz\s+(?:jeszcze\s+|też\s+|także\s+)?/i,
+  /^dołóż\s+(?:jeszcze\s+|też\s+|także\s+)?/i,
+  /^plus\s+/i,
+  /^oraz\s+/i,
+  /^i\s+także\s+/i,
+  /^dodaj\s+też\s*,?\s*/i,
+];
+
+const polishReplacePrefixes = [
+  /^czekaj\s*,?\s*/i,
+  /^poczekaj\s*,?\s*/i,
+  /^chwila\s*,?\s*/i,
+  /^stop\s*,?\s*/i,
+  /^nie\s*,\s*/i,
+  /^a\s+właściwie\s+/i,
+  /^właściwie\s+/i,
+  /^jednak\s+/i,
+  /^raczej\s+/i,
+  /^inaczej\s+/i,
+  /^zamiast\s+tego\s+/i,
+  /^zamiast\s+/i,
+  /^lepiej\s+/i,
+];
+
+const polishRefinePrefixes = [
+  /^tylko\s+/i,
+  /^krócej\s+/i,
+  /^krótko\s+/i,
+  /^na\s+szybko\s*/i,
+  /^szybko\s*/i,
+  /^punktami\s*/i,
+  /^w\s+punktach\s*/i,
+  /^formalnie\s*/i,
+  /^bardziej\s+formalnie\s*/i,
+  /^luźniej\s*/i,
+  /^bardziej\s+luźno\s*/i,
+  /^po\s+polsku\s*/i,
+  /^po\s+angielsku\s*/i,
+  /^bardziej\s+krótko\s+/i,
+  /^dokładniej\s+/i,
+  /^prościej\s+/i,
+  /^bardziej\s+technicznie\s*/i,
+  /^mniej\s+technicznie\s*/i,
+  /^dla\s+dziecka\s*/i,
+  /^jak\s+dla\s+dziecka\s*/i,
+  /^dla\s+dziecka\s+z\s+podstawówki\s*/i,
+  /^jak\s+dla\s+dziecka\s+z\s+podstawówki\s*/i,
+  /^dla\s+seniora\s*/i,
+  /^w\s+jednym\s+zdaniu\s*/i,
+  /^jednym\s+zdaniem\s*/i,
+  /^bez\s+tego\s*/i,
+  /^bez\s+tego\s+fragmentu\s*/i,
+  /^bez\s+przykładów\s*/i,
+  /^bez\s+szczegółów\s*/i,
+  /^bez\s+technikaliów\s*/i,
+];
+
+const englishRefinePrefixes = [
+  /^quickly\s*/i,
+  /^real\s+quick\s*/i,
+  /^briefly\s*/i,
+  /^in\s+bullet\s+points\s*/i,
+  /^as\s+bullet\s+points\s*/i,
+  /^formally\s*/i,
+  /^more\s+formally\s*/i,
+  /^more\s+casually\s*/i,
+  /^casually\s*/i,
+  /^for\s+a\s+senior\s*/i,
+  /^for\s+a\s+child\s*/i,
+  /^for\s+a\s+primary\s+school\s+child\s*/i,
+  /^in\s+one\s+sentence\s*/i,
+  /^without\s+examples\s*/i,
+  /^without\s+details\s*/i,
+  /^without\s+technical\s+details\s*/i,
+  /^more\s+technical(?:ly)?\s*/i,
+  /^less\s+technical(?:ly)?\s*/i,
+  /^simpler\s*/i,
+  /^more\s+precisely\s*/i,
+  /^in\s+polish\s*/i,
+  /^in\s+english\s*/i,
+];
+
+const polishStyleRefinements: Array<{
+  pattern: RegExp;
+  build: (base: string, clean: string) => string;
+}> = [
+  {
+    pattern: /^bez\s+tego(?:\s+fragmentu)?$/i,
+    build: (base) => `${base}, ale bez tego.`,
+  },
+  {
+    pattern: /^bez\s+(.+)$/i,
+    build: (base, clean) => `${base}, ale bez ${clean.replace(/^bez\s+/i, "")}.`,
+  },
+  {
+    pattern: /^bez\s+przykładów$/i,
+    build: (base) => `${base}, ale bez przykładów.`,
+  },
+  {
+    pattern: /^(?:bardziej\s+)?technicznie$/i,
+    build: (base) => `${base}, wyjaśnij to bardziej technicznie.`,
+  },
+  {
+    pattern: /^mniej\s+technicznie$/i,
+    build: (base) => `${base}, wyjaśnij to mniej technicznie.`,
+  },
+  {
+    pattern: /^(?:jak\s+)?dla\s+dziecka$/i,
+    build: (base) => `${base}, wyjaśnij to tak, żeby zrozumiało to dziecko.`,
+  },
+  {
+    pattern: /^(?:jak\s+)?dla\s+dziecka\s+z\s+podstawówki$/i,
+    build: (base) => `${base}, wyjaśnij to tak, żeby zrozumiało to dziecko z podstawówki.`,
+  },
+  {
+    pattern: /^dla\s+seniora$/i,
+    build: (base) => `${base}, wyjaśnij to jasno i spokojnie, z myślą o seniorze.`,
+  },
+  {
+    pattern: /^(?:w\s+jednym\s+zdaniu|jednym\s+zdaniem)$/i,
+    build: (base) => `${base}, powiedz to w jednym zdaniu.`,
+  },
+  {
+    pattern: /^krócej$|^krótko$|^bardziej\s+krótko$/i,
+    build: (base) => `${base}, ale krócej.`,
+  },
+  {
+    pattern: /^(?:na\s+szybko|szybko)$/i,
+    build: (base) => `${base}, ale na szybko.`,
+  },
+  {
+    pattern: /^(?:punktami|w\s+punktach)$/i,
+    build: (base) => `${base}, odpowiedz punktami.`,
+  },
+  {
+    pattern: /^(?:formalnie|bardziej\s+formalnie)$/i,
+    build: (base) => `${base}, odpowiedz bardziej formalnie.`,
+  },
+  {
+    pattern: /^(?:luźniej|bardziej\s+luźno)$/i,
+    build: (base) => `${base}, odpowiedz trochę luźniej.`,
+  },
+  {
+    pattern: /^dokładniej$/i,
+    build: (base) => `${base}, ale dokładniej.`,
+  },
+  {
+    pattern: /^prościej$/i,
+    build: (base) => `${base}, ale prościej.`,
+  },
+  {
+    pattern: /^po\s+polsku$/i,
+    build: (base) => `${base}, odpowiedz po polsku.`,
+  },
+  {
+    pattern: /^po\s+angielsku$/i,
+    build: (base) => `${base}, odpowiedz po angielsku.`,
+  },
+  {
+    pattern: /^in\s+one\s+sentence$/i,
+    build: (base) => `${base}, answer in one sentence.`,
+  },
+  {
+    pattern: /^in\s+bullet\s+points$|^as\s+bullet\s+points$/i,
+    build: (base) => `${base}, answer in bullet points.`,
+  },
+  {
+    pattern: /^formally$|^more\s+formally$/i,
+    build: (base) => `${base}, answer more formally.`,
+  },
+  {
+    pattern: /^more\s+casually$|^casually$/i,
+    build: (base) => `${base}, answer more casually.`,
+  },
+  {
+    pattern: /^for\s+a\s+senior$/i,
+    build: (base) => `${base}, explain it clearly and calmly for a senior.`,
+  },
+  {
+    pattern: /^for\s+a\s+child$/i,
+    build: (base) => `${base}, explain it so a child can understand it.`,
+  },
+  {
+    pattern: /^for\s+a\s+primary\s+school\s+child$/i,
+    build: (base) => `${base}, explain it so a primary school child can understand it.`,
+  },
+  {
+    pattern: /^without\s+examples$/i,
+    build: (base) => `${base}, but without examples.`,
+  },
+  {
+    pattern: /^without\s+details$/i,
+    build: (base) => `${base}, but without details.`,
+  },
+  {
+    pattern: /^without\s+technical\s+details$/i,
+    build: (base) => `${base}, but without technical details.`,
+  },
+  {
+    pattern: /^more\s+technical(?:ly)?$/i,
+    build: (base) => `${base}, explain it in a more technical way.`,
+  },
+  {
+    pattern: /^less\s+technical(?:ly)?$/i,
+    build: (base) => `${base}, explain it in a less technical way.`,
+  },
+  {
+    pattern: /^quickly$|^real\s+quick$|^briefly$/i,
+    build: (base) => `${base}, but quickly.`,
+  },
+  {
+    pattern: /^simpler$/i,
+    build: (base) => `${base}, but simpler.`,
+  },
+  {
+    pattern: /^more\s+precisely$/i,
+    build: (base) => `${base}, but more precisely.`,
+  },
+  {
+    pattern: /^in\s+polish$/i,
+    build: (base) => `${base}, answer in Polish.`,
+  },
+  {
+    pattern: /^in\s+english$/i,
+    build: (base) => `${base}, answer in English.`,
+  },
+];
+
+const englishAmendmentPrefixes = [
+  /^wait\s*,?\s*/i,
+  /^actually\s*,?\s*/i,
+  /^add\s+/i,
+  /^instead\s+/i,
+  /^rather\s+/i,
+  /^make\s+it\s+/i,
+];
+
+const stripFirstMatchingPrefix = (text: string, patterns: RegExp[]): string => {
+  let result = text;
+  for (const pattern of patterns) {
+    result = result.replace(pattern, "");
+  }
+  return normalizeWhitespace(result);
+};
+
+const detectAmendmentMode = (text: string): AmendmentMode => {
+  const normalized = normalizeWhitespace(text);
+  if (!normalized) {
+    return "refine";
+  }
+  if (polishAddPrefixes.some((pattern) => pattern.test(normalized))) {
+    return "add";
+  }
+  if (polishReplacePrefixes.some((pattern) => pattern.test(normalized))) {
+    return "replace";
+  }
+  if (polishRefinePrefixes.some((pattern) => pattern.test(normalized))) {
+    return "refine";
+  }
+  if (englishRefinePrefixes.some((pattern) => pattern.test(normalized))) {
+    return "refine";
+  }
+  if (englishAmendmentPrefixes.some((pattern) => pattern.test(normalized))) {
+    if (/^add\s+/i.test(normalized)) {
+      return "add";
+    }
+    if (/^instead\s+/i.test(normalized)) {
+      return "replace";
+    }
+    return "refine";
+  }
+  return "refine";
+};
+
+const stripAmendmentPrefix = (text: string, mode: AmendmentMode): string => {
+  const basePatterns = [...englishAmendmentPrefixes];
+  if (mode === "add") {
+    return stripFirstMatchingPrefix(text, [...polishAddPrefixes, ...basePatterns]);
+  }
+  if (mode === "replace") {
+    return stripFirstMatchingPrefix(text, [...polishReplacePrefixes, ...basePatterns]);
+  }
+  return stripFirstMatchingPrefix(text, [...polishRefinePrefixes, ...englishRefinePrefixes, ...polishReplacePrefixes, ...basePatterns]);
+};
+
+const mergeInterruptedUserText = (previousText: string, amendmentText: string): string => {
+  const previous = normalizeWhitespace(previousText);
+  const amendment = normalizeWhitespace(amendmentText);
+
+  if (!previous) {
+    return amendment;
+  }
+  if (!amendment) {
+    return previous;
+  }
+
+  const mode = detectAmendmentMode(amendment);
+  const stripped = stripAmendmentPrefix(amendment, mode) || amendment;
+  const base = trimTrailingPunctuation(previous);
+  const clean = trimTrailingPunctuation(stripped);
+  const normalizedClean = lowercaseFirst(clean);
+
+  if (!clean) {
+    return previous;
+  }
+
+  if (mode === "add") {
+    return `${base}, a dodatkowo ${normalizedClean}.`;
+  }
+
+  if (mode === "replace") {
+    return `${base}, ale ${normalizedClean}.`;
+  }
+
+  const matchedStyleRefinement = polishStyleRefinements.find(({ pattern }) =>
+    pattern.test(clean),
+  );
+  if (matchedStyleRefinement) {
+    return matchedStyleRefinement.build(base, clean);
+  }
+
+  const shortRefinement = clean.split(" ").length <= 6;
+  if (shortRefinement) {
+    return `${base}, ${normalizedClean}.`;
+  }
+
+  return `${base}. Uwzględnij też, że ${normalizedClean}.`;
+};
 
 class ChatFlow implements ChatFlowContext {
   currentFlowName: FlowName = "sleep";
@@ -58,6 +407,7 @@ class ChatFlow implements ChatFlowContext {
   isFromWakeListening: boolean = false;
   enterMusicAfterAnswer: boolean = false;
   musicDisplayText: string = "";
+  conversationMessages: Message[] = [];
   responseInterruptMonitorStop: () => void = () => {};
   answerInterruptVoiceEnabled: boolean =
     (process.env.ANSWER_INTERRUPT_WITH_VOICE || "true").toLowerCase() ===
@@ -81,6 +431,9 @@ class ChatFlow implements ChatFlowContext {
   answerInterruptSampleDurationSec: number = parseFloat(
     process.env.ANSWER_INTERRUPT_SAMPLE_DURATION_SEC || "0.18",
   );
+  pendingAssistantText: string = "";
+  activeUserMessageIndex: number = -1;
+  mergeNextInterruptIntoActiveUser: boolean = false;
 
   constructor(options: { enableCamera?: boolean } = {}) {
     console.log(`[${getCurrentTimeTag()}] ChatBot started.`);
@@ -283,6 +636,14 @@ class ChatFlow implements ChatFlowContext {
     this.wakeWordListener?.start();
   };
 
+  resetConversationMemory = (): void => {
+    this.conversationMessages = [];
+    this.pendingAssistantText = "";
+    this.activeUserMessageIndex = -1;
+    this.mergeNextInterruptIntoActiveUser = false;
+    resetChatHistory();
+  };
+
   shouldContinueWakeSession = (): boolean => {
     if (!this.wakeSessionActive) return false;
     const last = this.wakeSessionLastSpeechAt || this.wakeSessionStartAt;
@@ -301,7 +662,84 @@ class ChatFlow implements ChatFlowContext {
     this.partialThinking = "";
     this.thinkingSentences = [];
     this.stopResponseInterruptMonitor();
+    if (this.activeUserMessageIndex >= 0) {
+      this.mergeNextInterruptIntoActiveUser = true;
+    }
+    this.clearPendingAssistantResponse();
+    resetChatHistory();
     this.streamResponser.stop();
+  };
+
+  prepareConversationPrompt = (
+    userText: string,
+    knowledgePrompt?: string,
+  ): Message[] => {
+    if (shouldResetChatHistory()) {
+      this.resetConversationMemory();
+    }
+
+    const normalizedText = userText.trim();
+    if (!normalizedText) {
+      return this.conversationMessages.slice();
+    }
+
+    if (
+      this.mergeNextInterruptIntoActiveUser &&
+      this.activeUserMessageIndex >= 0 &&
+      this.conversationMessages[this.activeUserMessageIndex]?.role === "user"
+    ) {
+      const previous = this.conversationMessages[this.activeUserMessageIndex].content.trim();
+      this.conversationMessages[this.activeUserMessageIndex].content = mergeInterruptedUserText(
+        previous,
+        normalizedText,
+      );
+      this.mergeNextInterruptIntoActiveUser = false;
+    } else {
+      this.conversationMessages.push({
+        role: "user",
+        content: uppercaseFirst(normalizedText),
+      });
+      this.activeUserMessageIndex = this.conversationMessages.length - 1;
+      this.mergeNextInterruptIntoActiveUser = false;
+    }
+
+    this.pendingAssistantText = "";
+    resetChatHistory();
+
+    const prompt: Message[] = this.conversationMessages.map((message) => ({
+      role: message.role,
+      content: message.content,
+    }));
+
+    if (knowledgePrompt) {
+      prompt.splice(Math.max(0, prompt.length - 1), 0, {
+        role: "system",
+        content: knowledgePrompt,
+      });
+    }
+
+    return prompt;
+  };
+
+  appendPendingAssistantText = (text: string): void => {
+    this.pendingAssistantText += text;
+  };
+
+  commitPendingAssistantResponse = (): void => {
+    const finalText = this.pendingAssistantText.trim();
+    if (finalText) {
+      this.conversationMessages.push({
+        role: "assistant",
+        content: finalText,
+      });
+    }
+    this.pendingAssistantText = "";
+    this.activeUserMessageIndex = -1;
+    this.mergeNextInterruptIntoActiveUser = false;
+  };
+
+  clearPendingAssistantResponse = (): void => {
+    this.pendingAssistantText = "";
   };
 
   startResponseInterruptMonitor = (onInterrupt: () => void): void => {
