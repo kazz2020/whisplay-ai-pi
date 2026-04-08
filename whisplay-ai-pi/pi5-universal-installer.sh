@@ -843,6 +843,7 @@ ensure_litert_hf_auth() {
 
   print_note "Selected LiteRT-LM repo is a gated Google Gemma repository on Hugging Face."
   print_note "You need approved Hugging Face access plus an hf_ token to download it during install."
+  print_note "If you use a fine-grained token, enable access to public gated repositories in the token settings."
 
   if [ -n "${LLAMA_CPP_HF_TOKEN_VALUE:-}" ]; then
     return 0
@@ -1412,7 +1413,7 @@ import os
 import sys
 
 from huggingface_hub import hf_hub_download, list_repo_files
-from huggingface_hub.errors import GatedRepoError
+from huggingface_hub.errors import GatedRepoError, HfHubHTTPError, LocalEntryNotFoundError
 
 repo_id = os.environ["REPO_ID"]
 target_root = Path(os.environ["TARGET_ROOT"]).expanduser()
@@ -1443,6 +1444,25 @@ except GatedRepoError:
     file=sys.stderr,
   )
   raise SystemExit(2)
+except (HfHubHTTPError, LocalEntryNotFoundError) as exc:
+  message = str(exc)
+  if "public gated repositories" in message.lower():
+    print(
+      "TOKEN_PERMISSIONS: Your Hugging Face fine-grained token must allow access to public gated repositories.",
+      file=sys.stderr,
+    )
+    print(
+      "TOKEN_PERMISSIONS: Edit the token and enable read access for public gated repositories, then rerun the installer.",
+      file=sys.stderr,
+    )
+    raise SystemExit(3)
+  if "403 forbidden" in message.lower() or "cannot access content" in message.lower():
+    print(
+      f"HF_FORBIDDEN: Access to {repo_id} was denied. Verify the account behind the token has been approved for this gated repo.",
+      file=sys.stderr,
+    )
+    raise SystemExit(4)
+  raise
 PY
 )
   download_path=$(printf '%s\n' "${download_output}" | tail -n 1)
