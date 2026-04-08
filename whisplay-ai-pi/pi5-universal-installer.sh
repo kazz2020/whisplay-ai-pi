@@ -26,9 +26,9 @@ OLLAMA_ENABLE_TOOLS_VALUE="false"
 LITERT_LM_HOST_VALUE="127.0.0.1"
 LITERT_LM_PORT_VALUE="8810"
 LITERT_LM_MODEL_DIR="${DEFAULT_LITERT_LM_MODEL_DIR}"
-LITERT_LM_MODEL_REPO_VALUE="litert-community/gemma-4-E2B-it-litert-lm"
+LITERT_LM_MODEL_REPO_VALUE="google/gemma-3n-E2B-it-litert-lm"
 LITERT_LM_MODEL_FILENAME_VALUE=""
-LITERT_LM_MODEL_LABEL="Gemma 4 E2B LiteRT-LM"
+LITERT_LM_MODEL_LABEL="Gemma 3n E2B LiteRT-LM"
 LITERT_LM_MODEL_PATH_VALUE=""
 LITERT_LM_BACKEND_VALUE="cpu"
 LITERT_LM_ENABLE_SPECULATIVE_DECODING_VALUE="auto"
@@ -339,9 +339,9 @@ reset_install_choices() {
   LITERT_LM_HOST_VALUE="127.0.0.1"
   LITERT_LM_PORT_VALUE="8810"
   LITERT_LM_MODEL_DIR="${DEFAULT_LITERT_LM_MODEL_DIR}"
-  LITERT_LM_MODEL_REPO_VALUE="litert-community/gemma-4-E2B-it-litert-lm"
+  LITERT_LM_MODEL_REPO_VALUE="google/gemma-3n-E2B-it-litert-lm"
   LITERT_LM_MODEL_FILENAME_VALUE=""
-  LITERT_LM_MODEL_LABEL="Gemma 4 E2B LiteRT-LM"
+  LITERT_LM_MODEL_LABEL="Gemma 3n E2B LiteRT-LM"
   LITERT_LM_MODEL_PATH_VALUE=""
   LITERT_LM_BACKEND_VALUE="cpu"
   LITERT_LM_ENABLE_SPECULATIVE_DECODING_VALUE="auto"
@@ -1351,6 +1351,12 @@ download_litert_lm_model() {
     return 1
   fi
 
+  case "${repo_id}" in
+    litert-community/gemma-4-E2B-it-litert-lm|litert-community/gemma-4-E4B-it-litert-lm)
+      warn "Selected LiteRT-LM model is a multi-GB Gemma 4 build. On a Pi 5 this can look hung during download and may cause heavy IO pressure."
+      ;;
+  esac
+
   mkdir -p "${target_root}"
   download_output=$(REPO_ID="${repo_id}" TARGET_ROOT="${target_root}" FILENAME_HINT="${filename_hint}" HF_TOKEN_VALUE="${LLAMA_CPP_HF_TOKEN_VALUE:-}" python3 - <<'PY'
 from pathlib import Path
@@ -1376,9 +1382,7 @@ download_path = hf_hub_download(
     filename=candidate,
     repo_type="model",
     token=token,
-    resume_download=True,
     local_dir=str(target_root),
-    local_dir_use_symlinks=False,
 )
 print(candidate)
 print(download_path)
@@ -1469,17 +1473,18 @@ pick_litert_model() {
   local choice
   choice=$(choose_from_menu \
     "Select the LiteRT-LM local model" \
-    "6" \
+    "2" \
     "1|Ultra light: Gemma 3n E2B Preview (experimental, lowest RAM)" \
-    "2|Fast: Gemma 3n E2B LiteRT-LM" \
+    "2|Fast: Gemma 3n E2B LiteRT-LM (recommended for Pi 5)" \
     "3|Polish-first: Gemma 3n E2B LiteRT-LM" \
     "4|German-first: Gemma 3n E2B LiteRT-LM" \
     "5|Balanced multilingual: Gemma 3n E4B LiteRT-LM" \
-    "6|Balanced stable: Gemma 4 E2B LiteRT-LM (recommended)" \
+    "6|Balanced stable: Gemma 4 E2B LiteRT-LM" \
     "7|Higher quality: Gemma 4 E4B LiteRT-LM" \
     "8|Custom LiteRT-LM Hugging Face repo")
 
   print_note "Polish-first and German-first use the same multilingual Gemma 3n LiteRT model with lighter Pi-friendly defaults."
+  print_note "Gemma 4 LiteRT models are much larger and can make a Pi look stuck during download. Use Gemma 3n E2B unless you explicitly want the heavier option."
 
   case "${choice}" in
     1)
@@ -1624,7 +1629,7 @@ pick_llm_runtime_mode() {
       if prompt_yes_no "Install LiteRT-LM runtime on this Pi" "y"; then
         INSTALL_LITERT_LM=true
       fi
-      if prompt_yes_no "Pre-download LiteRT-LM model during install" "y"; then
+      if prompt_yes_no "Pre-download LiteRT-LM model during install" "n"; then
         DOWNLOAD_LITERT_LM_MODEL=true
         LITERT_LM_MODEL_PATH_VALUE=""
       else
