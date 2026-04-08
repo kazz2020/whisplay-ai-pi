@@ -94,6 +94,7 @@ if [ -t 1 ]; then
   COLOR_CYAN=$(printf '\033[36m')
   COLOR_GREEN=$(printf '\033[32m')
   COLOR_YELLOW=$(printf '\033[33m')
+  COLOR_RED=$(printf '\033[31m')
 else
   COLOR_RESET=""
   COLOR_BOLD=""
@@ -102,6 +103,7 @@ else
   COLOR_CYAN=""
   COLOR_GREEN=""
   COLOR_YELLOW=""
+  COLOR_RED=""
 fi
 
 log() {
@@ -118,24 +120,50 @@ die() {
 }
 
 print_divider() {
-  printf '\n%s%s%s\n' "${COLOR_DIM}" "------------------------------------------------------------" "${COLOR_RESET}"
+  printf '\n%s%s%s\n' "${COLOR_DIM}" "================================================================" "${COLOR_RESET}"
 }
 
 print_section() {
   local title="$1"
   print_divider
-  printf '%s%s%s\n' "${COLOR_BOLD}${COLOR_CYAN}" "${title}" "${COLOR_RESET}"
+  printf '%s%s%s\n' "${COLOR_BOLD}${COLOR_CYAN}" ">>> ${title}" "${COLOR_RESET}"
+}
+
+print_subsection() {
+  local title="$1"
+  printf '\n%s%s%s\n' "${COLOR_BOLD}${COLOR_BLUE}" "-- ${title} --" "${COLOR_RESET}"
 }
 
 print_note() {
   local text="$1"
-  printf '%s%s%s\n' "${COLOR_DIM}" "${text}" "${COLOR_RESET}"
+  printf '%s%s%s\n' "${COLOR_DIM}" "   ${text}" "${COLOR_RESET}"
+}
+
+print_intro_card() {
+  local label="$1"
+  local value="$2"
+  printf '  %s%-20s%s %s\n' "${COLOR_GREEN}" "${label}" "${COLOR_RESET}" "${value}"
 }
 
 print_review_item() {
   local label="$1"
   local value="$2"
-  printf '  %s%-28s%s %s\n' "${COLOR_GREEN}" "${label}" "${COLOR_RESET}" "${value}"
+  printf '  %s%-24s%s : %s\n' "${COLOR_GREEN}" "${label}" "${COLOR_RESET}" "${value}"
+}
+
+print_menu_item() {
+  local key="$1"
+  local label="$2"
+  local default_value="$3"
+  local marker=" "
+
+  if [ "${key}" = "${default_value}" ]; then
+    marker="*"
+  fi
+
+  printf '  %s[%s]%s %s%-3s%s %s\n' \
+    "${COLOR_CYAN}" "${marker}" "${COLOR_RESET}" \
+    "${COLOR_BOLD}${COLOR_GREEN}" "${key}" "${COLOR_RESET}" "${label}" >&2
 }
 
 format_enabled() {
@@ -163,6 +191,7 @@ print_final_review() {
   print_section "Final review"
   print_note "Check the plan below. Nothing has been installed yet."
 
+  print_subsection "Install plan"
   print_review_item "Install driver" "$(format_enabled "${INSTALL_DRIVER}")"
   print_review_item "Install dependencies" "$(format_enabled "${INSTALL_CHATBOT_DEPS}")"
   print_review_item "Install local ASR" "$(format_enabled "${INSTALL_LOCAL_ASR}")"
@@ -171,6 +200,7 @@ print_final_review() {
   print_review_item "Install systemd service" "$(format_enabled "${INSTALL_SERVICE}")"
   print_review_item "Install wake word" "$(format_enabled "${INSTALL_WAKE_WORD}")"
 
+  print_subsection "Brain"
   if [ "${LLM_SERVER_SELECTION}" = "llama.cpp" ]; then
     print_review_item "LLM runtime" "local llama.cpp"
     print_review_item "Brain profile" "${BRAIN_PROFILE_LABEL}"
@@ -201,6 +231,7 @@ print_final_review() {
     print_review_item "API key" "$(mask_secret "${OPENAI_API_KEY_VALUE}")"
   fi
 
+  print_subsection "Speech and conversation"
   print_review_item "ASR model" "${ASR_MODEL}"
   print_review_item "Assistant language" "${ASSISTANT_LANGUAGE_LABEL}"
   print_review_item "ASR language" "${ASR_LANGUAGE}"
@@ -217,6 +248,8 @@ print_final_review() {
   print_review_item "Thinking mode" "${ENABLE_THINKING_VALUE}"
   print_review_item "Use camera in chat" "${USE_CAPTURED_IMAGE_IN_CHAT_VALUE}"
   print_review_item "Chat history limit" "${CHATBOT_MAX_MESSAGES}"
+
+  print_subsection "Memory"
   print_review_item "Pi memory tuning" "${PI_MEMORY_PROFILE_LABEL}"
   if [ "${APPLY_PI_MEMORY_TUNING}" = true ]; then
     print_review_item "Memory mode" "${PI_MEMORY_MODE_VALUE}"
@@ -225,10 +258,13 @@ print_final_review() {
     print_review_item "Cache / dirty" "${PI_VFS_CACHE_PRESSURE_VALUE} / ${PI_DIRTY_BACKGROUND_RATIO_VALUE}-${PI_DIRTY_RATIO_VALUE}"
     print_review_item "Allocator tuning" "arena=${RUNTIME_MALLOC_ARENA_MAX_VALUE} trim=${RUNTIME_MALLOC_TRIM_THRESHOLD_VALUE}"
   fi
+
+  print_subsection "Paths"
   print_review_item "Driver repo dir" "${DRIVER_DIR}"
   print_review_item "Env template" "${CHATBOT_ENV_TEMPLATE}"
   print_review_item "Env output" "${CHATBOT_ENV_FILE}"
 
+  print_subsection "RAG"
   if [ "${ENABLE_RAG_VALUE}" = "true" ]; then
     print_review_item "RAG enabled" "yes"
     print_review_item "Serve local Qdrant" "$(format_enabled "${SERVE_QDRANT_VALUE}")"
@@ -247,6 +283,7 @@ print_final_review() {
     print_review_item "RAG enabled" "no"
   fi
 
+  print_subsection "Wake word"
   if [ "${INSTALL_WAKE_WORD}" = true ]; then
     print_review_item "Wake engine" "${WAKE_WORD_ENGINE}"
     print_review_item "Wake end keywords" "${WAKE_WORD_END_KEYWORDS_VALUE}"
@@ -657,7 +694,13 @@ pick_pi_memory_tuning() {
 print_intro() {
   print_divider
   printf '%s%s%s\n' "${COLOR_BOLD}${COLOR_BLUE}" "Whisplay Pi 5 Installer" "${COLOR_RESET}"
-  print_note "Interactive setup for the device stack, assistant runtime, and optional wake word support."
+  printf '%s%s%s\n' "${COLOR_DIM}" "Interactive setup for device drivers, assistant runtime, local services, and wake word support." "${COLOR_RESET}"
+  printf '%s%s%s\n' "${COLOR_DIM}" "Asterisk-marked menu entries are the current recommended defaults." "${COLOR_RESET}"
+  printf '\n'
+  print_intro_card "Workspace" "${PROJECT_ROOT}"
+  print_intro_card "Target" "Raspberry Pi 5 assistant stack"
+  print_intro_card "Modes" "local, LAN, or cloud brain selection"
+  print_intro_card "Status" "configuration only until final review"
 }
 
 choose_from_menu() {
@@ -666,11 +709,12 @@ choose_from_menu() {
   shift 2
 
   print_section "${title}" >&2
+  print_note "Choose one option. Recommended default is marked with [*]." >&2
   local entry key label choices=""
   for entry in "$@"; do
     key="${entry%%|*}"
     label="${entry#*|}"
-    printf '  %s[%s]%s %s\n' "${COLOR_GREEN}" "${key}" "${COLOR_RESET}" "${label}" >&2
+    print_menu_item "${key}" "${label}" "${default_value}"
     if [ -n "${choices}" ]; then
       choices="${choices}, ${key}"
     else
@@ -680,7 +724,7 @@ choose_from_menu() {
 
   local reply
   while true; do
-    read -r -p "${COLOR_BOLD}Select an option${COLOR_RESET} [${default_value}]: " reply
+    read -r -p "${COLOR_BOLD}${COLOR_CYAN}Select option${COLOR_RESET} ${COLOR_DIM}[default: ${default_value}]${COLOR_RESET} -> " reply
     reply="${reply:-$default_value}"
     for entry in "$@"; do
       key="${entry%%|*}"
@@ -706,7 +750,7 @@ prompt_yes_no() {
   fi
 
   while true; do
-    read -r -p "${COLOR_BOLD}${prompt}${COLOR_RESET} ${COLOR_DIM}[${hint}]${COLOR_RESET} " reply
+    read -r -p "${COLOR_BOLD}${prompt}${COLOR_RESET} ${COLOR_DIM}[${hint}]${COLOR_RESET} -> " reply
     reply="${reply:-$default_value}"
     case "${reply}" in
       y|Y|yes|YES) return 0 ;;
@@ -720,7 +764,7 @@ prompt_value() {
   local prompt="$1"
   local default_value="$2"
   local reply
-  read -r -p "${COLOR_BOLD}${prompt}${COLOR_RESET} ${COLOR_DIM}[${default_value}]${COLOR_RESET} " reply
+  read -r -p "${COLOR_BOLD}${prompt}${COLOR_RESET} ${COLOR_DIM}[${default_value}]${COLOR_RESET} -> " reply
   printf '%s\n' "${reply:-$default_value}"
 }
 
@@ -728,7 +772,7 @@ prompt_required_value() {
   local prompt="$1"
   local reply
   while true; do
-    read -r -p "${COLOR_BOLD}${prompt}${COLOR_RESET}: " reply
+    read -r -p "${COLOR_BOLD}${prompt}${COLOR_RESET} -> " reply
     if [ -n "${reply}" ]; then
       printf '%s\n' "${reply}"
       return 0
