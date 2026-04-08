@@ -62,6 +62,49 @@ run_fg_command() {
   fi
 }
 
+stop_conflicting_port() {
+  local port="$1"
+  local label="$2"
+
+  if command -v fuser >/dev/null 2>&1; then
+    if fuser -n tcp "$port" >/dev/null 2>&1; then
+      echo "Stopping stale ${label} listener on port ${port}..."
+      fuser -k -n tcp "$port" >/dev/null 2>&1 || true
+    fi
+    return 0
+  fi
+
+  if command -v lsof >/dev/null 2>&1; then
+    local pids
+    pids=$(lsof -ti tcp:"$port" 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+      echo "Stopping stale ${label} listener on port ${port}..."
+      kill $pids >/dev/null 2>&1 || true
+    fi
+  fi
+}
+
+cleanup_stale_runtime_state() {
+  if [ "$is_linux" != true ]; then
+    return 0
+  fi
+
+  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet chatbot.service 2>/dev/null; then
+    echo "Stopping active chatbot.service to avoid GPIO and port conflicts..."
+    sudo systemctl stop chatbot.service >/dev/null 2>&1 || true
+  fi
+
+  if command -v pkill >/dev/null 2>&1; then
+    pkill -f "python3 chatbot-ui.py" >/dev/null 2>&1 || true
+    pkill -f "faster-whisper-host.py" >/dev/null 2>&1 || true
+    pkill -f "piper.http_server" >/dev/null 2>&1 || true
+  fi
+
+  stop_conflicting_port 12345 "display socket"
+  stop_conflicting_port 8803 "faster-whisper"
+  stop_conflicting_port 8805 "piper-http"
+}
+
 # Set working directory and environment
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 os_name=$(uname -s 2>/dev/null || echo "unknown")
@@ -132,6 +175,8 @@ fi
 # Start the service
 echo "Starting Node.js application..."
 cd $working_dir
+
+cleanup_stale_runtime_state
 
 get_env_value() {
   if grep -Eq "^[[:space:]]*$1[[:space:]]*=" .env; then

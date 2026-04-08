@@ -1430,6 +1430,8 @@ download_litert_lm_model() {
 from pathlib import Path
 import os
 import sys
+import threading
+import time
 
 from huggingface_hub import hf_hub_download, list_repo_files
 from huggingface_hub.errors import GatedRepoError, HfHubHTTPError, LocalEntryNotFoundError
@@ -1448,13 +1450,47 @@ try:
       raise SystemExit(f"No .litertlm file found in {repo_id}")
     candidate = litert_files[0]
 
-  download_path = hf_hub_download(
-    repo_id=repo_id,
-    filename=candidate,
-    repo_type="model",
-    token=token,
-    local_dir=str(target_root),
-  )
+  progress_target = target_root / candidate
+  progress_stop = False
+  started_at = time.time()
+
+  def emit_progress():
+    last_size = -1
+    while not progress_stop:
+      time.sleep(10)
+      if progress_stop:
+        break
+      size_bytes = progress_target.stat().st_size if progress_target.exists() else 0
+      size_mib = size_bytes / (1024 * 1024)
+      elapsed = int(time.time() - started_at)
+      if size_bytes != last_size:
+        print(
+          f"DOWNLOAD_PROGRESS: {candidate} -> {size_mib:.1f} MiB written after {elapsed}s",
+          file=sys.stderr,
+          flush=True,
+        )
+        last_size = size_bytes
+      else:
+        print(
+          f"DOWNLOAD_PROGRESS: still downloading {candidate} after {elapsed}s",
+          file=sys.stderr,
+          flush=True,
+        )
+
+  print(f"Starting LiteRT-LM download: {candidate}", file=sys.stderr, flush=True)
+  progress_thread = threading.Thread(target=emit_progress, daemon=True)
+  progress_thread.start()
+
+  try:
+    download_path = hf_hub_download(
+      repo_id=repo_id,
+      filename=candidate,
+      repo_type="model",
+      token=token,
+      local_dir=str(target_root),
+    )
+  finally:
+    progress_stop = True
   print(candidate)
   print(download_path)
 except GatedRepoError:
