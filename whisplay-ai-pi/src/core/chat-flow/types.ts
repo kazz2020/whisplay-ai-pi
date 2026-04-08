@@ -47,4 +47,7 @@ export interface ChatFlowContext {
   shouldContinueWakeSession: () => boolean;
   shouldEndAfterAnswer: (text: string) => boolean;
   streamExternalReply: (text: string, emoji?: string) => Promise<void>;
+  interruptCurrentAnswer: () => void;
+  startResponseInterruptMonitor: (onInterrupt: () => void) => void;
+  stopResponseInterruptMonitor: () => void;
 }

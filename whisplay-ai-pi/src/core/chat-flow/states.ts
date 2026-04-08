@@ -287,6 +287,12 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
       RGB: "#00c8a3",
     });
     const currentAnswerId = ctx.answerId;
+    const interruptToListening = () => {
+      ctx.interruptCurrentAnswer();
+      clearPendingCapturedImgForChat();
+      display({ image_icon_visible: false });
+      ctx.transitionTo("listening");
+    };
     if (isImMode) {
       const prompt: {
         role: "system" | "user";
@@ -322,7 +328,7 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
       return;
     }
     onButtonPressed(() => {
-      ctx.transitionTo("listening");
+      interruptToListening();
     });
     onButtonReleased(noop);
     const {
@@ -410,7 +416,7 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
         );
       });
     getPlayEndPromise().then(() => {
-      if (ctx.currentFlowName === "answer") {
+      if (ctx.currentFlowName === "answer" && currentAnswerId === ctx.answerId) {
         clearPendingCapturedImgForChat();
         display({ image_icon_visible: false });
         if (ctx.wakeSessionActive || ctx.endAfterAnswer) {
@@ -434,11 +440,9 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
         }
       }
     });
+    ctx.startResponseInterruptMonitor(interruptToListening);
     onButtonPressed(() => {
-      stopPlaying();
-      clearPendingCapturedImgForChat();
-      display({ image_icon_visible: false });
-      ctx.transitionTo("listening");
+      interruptToListening();
     });
     onButtonReleased(noop);
   },
@@ -459,10 +463,14 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
       RGB: "#00c8a3",
       ...(ctx.pendingExternalEmoji ? { emoji: ctx.pendingExternalEmoji } : {}),
     });
-    onButtonPressed(() => {
-      ctx.streamResponser.stop();
+    const currentAnswerId = ctx.answerId;
+    const interruptToListening = () => {
+      ctx.interruptCurrentAnswer();
       display({ image: "" });
       ctx.transitionTo("listening");
+    };
+    onButtonPressed(() => {
+      interruptToListening();
     });
     onButtonReleased(noop);
     const replyText = ctx.pendingExternalReply;
@@ -480,8 +488,14 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
 
     if (replyText) {
       void ctx.streamExternalReply(replyText, replyEmoji);
+      ctx.startResponseInterruptMonitor(interruptToListening);
       ctx.streamResponser.getPlayEndPromise().then(() => {
-        if (ctx.currentFlowName !== "external_answer") return;
+        if (
+          ctx.currentFlowName !== "external_answer" ||
+          currentAnswerId !== ctx.answerId
+        ) {
+          return;
+        }
         if (ctx.wakeSessionActive || ctx.endAfterAnswer) {
           if (ctx.endAfterAnswer) {
             ctx.endWakeSession();

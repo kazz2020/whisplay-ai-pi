@@ -17,6 +17,10 @@ import { flowStates } from "./chat-flow/states";
 import { ChatFlowContext, FlowName } from "./chat-flow/types";
 import { playWakeupChime } from "../device/audio";
 import { stopMusicPlayback, isMusicPlaying } from "../device/music-player";
+import {
+  detectCurrentInputLevel,
+  getDynamicVoiceDetectLevel,
+} from "../device/voice-detect";
 
 dotEnv.config();
 
@@ -54,6 +58,29 @@ class ChatFlow implements ChatFlowContext {
   isFromWakeListening: boolean = false;
   enterMusicAfterAnswer: boolean = false;
   musicDisplayText: string = "";
+  responseInterruptMonitorStop: () => void = () => {};
+  answerInterruptVoiceEnabled: boolean =
+    (process.env.ANSWER_INTERRUPT_WITH_VOICE || "true").toLowerCase() ===
+    "true";
+  answerInterruptGraceMs: number = parseInt(
+    process.env.ANSWER_INTERRUPT_GRACE_MS || "1200",
+    10,
+  );
+  answerInterruptPollMs: number = parseInt(
+    process.env.ANSWER_INTERRUPT_POLL_MS || "350",
+    10,
+  );
+  answerInterruptConsecutiveDetections: number = parseInt(
+    process.env.ANSWER_INTERRUPT_CONSECUTIVE_DETECTIONS || "2",
+    10,
+  );
+  answerInterruptVoiceLevelBoost: number = parseInt(
+    process.env.ANSWER_INTERRUPT_VOICE_LEVEL_BOOST || "6",
+    10,
+  );
+  answerInterruptSampleDurationSec: number = parseFloat(
+    process.env.ANSWER_INTERRUPT_SAMPLE_DURATION_SEC || "0.18",
+  );
 
   constructor(options: { enableCamera?: boolean } = {}) {
     console.log(`[${getCurrentTimeTag()}] ChatBot started.`);
@@ -199,6 +226,9 @@ class ChatFlow implements ChatFlowContext {
   };
 
   transitionTo = (flowName: FlowName): void => {
+    if (flowName !== "answer" && flowName !== "external_answer") {
+      this.stopResponseInterruptMonitor();
+    }
     if (flowName !== "music" && isMusicPlaying()) {
       stopMusicPlayback();
     }
@@ -264,6 +294,100 @@ class ChatFlow implements ChatFlowContext {
     return this.wakeEndKeywords.some(
       (keyword) => keyword && lower.includes(keyword),
     );
+  };
+
+  interruptCurrentAnswer = (): void => {
+    this.answerId += 1;
+    this.partialThinking = "";
+    this.thinkingSentences = [];
+    this.stopResponseInterruptMonitor();
+    this.streamResponser.stop();
+  };
+
+  startResponseInterruptMonitor = (onInterrupt: () => void): void => {
+    this.stopResponseInterruptMonitor();
+
+    const webAudioEnabled = process.env.WEB_AUDIO_ENABLED === "true";
+    if (!this.answerInterruptVoiceEnabled || webAudioEnabled) {
+      return;
+    }
+
+    let stopped = false;
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    let consecutiveDetections = 0;
+    const startedAt = Date.now();
+
+    const scheduleNext = () => {
+      if (stopped) {
+        return;
+      }
+      timeoutHandle = setTimeout(runCheck, this.answerInterruptPollMs);
+    };
+
+    const runCheck = async () => {
+      if (
+        stopped ||
+        (this.currentFlowName !== "answer" &&
+          this.currentFlowName !== "external_answer")
+      ) {
+        return;
+      }
+
+      if (Date.now() - startedAt < this.answerInterruptGraceMs) {
+        scheduleNext();
+        return;
+      }
+
+      try {
+        const baseLevel = await getDynamicVoiceDetectLevel();
+        const threshold = Math.min(
+          100,
+          Math.max(1, baseLevel + this.answerInterruptVoiceLevelBoost),
+        );
+        const currentLevel = await detectCurrentInputLevel(
+          this.answerInterruptSampleDurationSec,
+        );
+
+        if (stopped) {
+          return;
+        }
+
+        if (currentLevel !== null && currentLevel >= threshold) {
+          consecutiveDetections += 1;
+          if (
+            consecutiveDetections >= this.answerInterruptConsecutiveDetections
+          ) {
+            console.log(
+              `[AnswerInterrupt] Voice interruption detected at ${currentLevel}% (threshold ${threshold}%)`,
+            );
+            onInterrupt();
+            return;
+          }
+        } else {
+          consecutiveDetections = 0;
+        }
+      } catch (error) {
+        console.error("[AnswerInterrupt] Voice monitor error:", error);
+        consecutiveDetections = 0;
+      }
+
+      scheduleNext();
+    };
+
+    this.responseInterruptMonitorStop = () => {
+      stopped = true;
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+      timeoutHandle = null;
+    };
+
+    scheduleNext();
+  };
+
+  stopResponseInterruptMonitor = (): void => {
+    this.responseInterruptMonitorStop();
+    this.responseInterruptMonitorStop = () => {};
   };
 }
 

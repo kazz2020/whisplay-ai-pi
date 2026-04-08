@@ -24,6 +24,10 @@ const noiseDetectIntervalMs = process.env.VOICE_NOISE_SAMPLE_INTERVAL_MS
   ? parseInt(process.env.VOICE_NOISE_SAMPLE_INTERVAL_MS, 10)
   : 30000;
 
+const voiceLevelSampleDurationSec = process.env.VOICE_LEVEL_SAMPLE_DURATION_SEC
+  ? parseFloat(process.env.VOICE_LEVEL_SAMPLE_DURATION_SEC)
+  : 0.18;
+
 const voiceDetectSmoothing = process.env.VOICE_DETECT_SMOOTHING
   ? parseFloat(process.env.VOICE_DETECT_SMOOTHING)
   : 0.7;
@@ -81,6 +85,50 @@ const detectAmbientNoiseLevel = (): Promise<number | null> => {
       }
       const noisePercent = clamp(Math.round(rms * 100), 0, 100);
       resolve(noisePercent);
+    };
+
+    sampleProcess.on("error", () => {
+      resolve(null);
+    });
+
+    sampleProcess.on("close", () => {
+      done();
+    });
+  });
+};
+
+export const detectCurrentInputLevel = (
+  sampleDurationSec: number = voiceLevelSampleDurationSec,
+): Promise<number | null> => {
+  return new Promise((resolve) => {
+    const soxArgs = [
+      "-t",
+      "alsa",
+      "default",
+      "-n",
+      "trim",
+      "0",
+      `${sampleDurationSec}`,
+      "stat",
+    ];
+    const sampleProcess = spawn("sox", soxArgs);
+
+    let output = "";
+    sampleProcess.stdout?.on("data", (data: Buffer) => {
+      output += data.toString();
+    });
+    sampleProcess.stderr?.on("data", (data: Buffer) => {
+      output += data.toString();
+    });
+
+    const done = () => {
+      const rms = parseRmsAmplitude(output);
+      if (rms === null) {
+        resolve(null);
+        return;
+      }
+      const levelPercent = clamp(Math.round(rms * 100), 0, 100);
+      resolve(levelPercent);
     };
 
     sampleProcess.on("error", () => {

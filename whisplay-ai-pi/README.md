@@ -106,6 +106,8 @@ The Pi installer now supports two different fully local LLM backends:
 
 The installer can also enable wake word detection. If you want the most reliable ready-made English option, choose `openWakeWord` with a preset like `hey_jarvis`. If you want your own custom phrase, choose `local-wake` and record reference samples directly on the device.
 
+The local Pi presets now also support answer interruption during TTS. Pressing the button while the assistant is speaking will stop the current reply immediately, and the Pi presets can also interrupt playback automatically when you start talking over the answer.
+
 The installer now also supports two local TTS backends on the Pi:
 
 - `piper-http` for the existing Piper flow
