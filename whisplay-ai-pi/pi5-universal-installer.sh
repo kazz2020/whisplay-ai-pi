@@ -853,6 +853,22 @@ ensure_litert_hf_auth() {
     return 0
   fi
 
+  if prompt_yes_no "Switch to the ungated LiteRT Community Gemma 4 E2B repo instead (larger download, no Google gating)" "y"; then
+    LITERT_LM_MODEL_REPO_VALUE="litert-community/gemma-4-E2B-it-litert-lm"
+    LITERT_LM_MODEL_FILENAME_VALUE=""
+    LITERT_LM_MODEL_LABEL="Gemma 4 E2B LiteRT-LM"
+    BRAIN_PROFILE_NAME="litert-balanced"
+    BRAIN_PROFILE_LABEL="LiteRT Balanced"
+    BRAIN_THREADS_DEFAULT="4"
+    BRAIN_CONTEXT_DEFAULT="2048"
+    BRAIN_BATCH_DEFAULT="192"
+    BRAIN_UBATCH_DEFAULT="96"
+    BRAIN_MAX_MESSAGES_DEFAULT="8"
+    print_note "Switched LiteRT pre-download to litert-community/gemma-4-E2B-it-litert-lm."
+    print_note "This avoids the Google gating issue, but the model is larger and slower to download on a Pi."
+    return 0
+  fi
+
   warn "No Hugging Face token provided. LiteRT-LM pre-download will be disabled for this gated repo."
   DOWNLOAD_LITERT_LM_MODEL=false
   LITERT_LM_MODEL_PATH_VALUE=$(prompt_required_value "Enter existing local .litertlm model path")
