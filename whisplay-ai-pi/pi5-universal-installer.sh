@@ -1469,13 +1469,33 @@ pick_litert_model() {
   local choice
   choice=$(choose_from_menu \
     "Select the LiteRT-LM local model" \
-    "2" \
-    "1|Fastest: Gemma 3n E2B LiteRT-LM" \
-    "2|Balanced: Gemma 4 E2B LiteRT-LM (recommended)" \
-    "3|Custom LiteRT-LM Hugging Face repo")
+    "6" \
+    "1|Ultra light: Gemma 3n E2B Preview (experimental, lowest RAM)" \
+    "2|Fast: Gemma 3n E2B LiteRT-LM" \
+    "3|Polish-first: Gemma 3n E2B LiteRT-LM" \
+    "4|German-first: Gemma 3n E2B LiteRT-LM" \
+    "5|Balanced multilingual: Gemma 3n E4B LiteRT-LM" \
+    "6|Balanced stable: Gemma 4 E2B LiteRT-LM (recommended)" \
+    "7|Higher quality: Gemma 4 E4B LiteRT-LM" \
+    "8|Custom LiteRT-LM Hugging Face repo")
+
+  print_note "Polish-first and German-first use the same multilingual Gemma 3n LiteRT model with lighter Pi-friendly defaults."
 
   case "${choice}" in
     1)
+      LLM_PROVIDER="litert-lm"
+      BRAIN_PROFILE_NAME="litert-ultra-light"
+      BRAIN_PROFILE_LABEL="LiteRT Ultra Light"
+      LITERT_LM_MODEL_REPO_VALUE="google/gemma-3n-E2B-it-litert-preview"
+      LITERT_LM_MODEL_FILENAME_VALUE=""
+      LITERT_LM_MODEL_LABEL="Gemma 3n E2B Preview"
+      BRAIN_THREADS_DEFAULT="4"
+      BRAIN_CONTEXT_DEFAULT="1024"
+      BRAIN_BATCH_DEFAULT="96"
+      BRAIN_UBATCH_DEFAULT="48"
+      BRAIN_MAX_MESSAGES_DEFAULT="6"
+      ;;
+    2)
       LLM_PROVIDER="litert-lm"
       BRAIN_PROFILE_NAME="litert-fast"
       BRAIN_PROFILE_LABEL="LiteRT Fast"
@@ -1488,7 +1508,46 @@ pick_litert_model() {
       BRAIN_UBATCH_DEFAULT="64"
       BRAIN_MAX_MESSAGES_DEFAULT="8"
       ;;
-    2)
+    3)
+      LLM_PROVIDER="litert-lm"
+      BRAIN_PROFILE_NAME="litert-polish"
+      BRAIN_PROFILE_LABEL="LiteRT Polish-first"
+      LITERT_LM_MODEL_REPO_VALUE="google/gemma-3n-E2B-it-litert-lm"
+      LITERT_LM_MODEL_FILENAME_VALUE=""
+      LITERT_LM_MODEL_LABEL="Polish-first Gemma 3n E2B LiteRT-LM"
+      BRAIN_THREADS_DEFAULT="4"
+      BRAIN_CONTEXT_DEFAULT="1536"
+      BRAIN_BATCH_DEFAULT="128"
+      BRAIN_UBATCH_DEFAULT="64"
+      BRAIN_MAX_MESSAGES_DEFAULT="6"
+      ;;
+    4)
+      LLM_PROVIDER="litert-lm"
+      BRAIN_PROFILE_NAME="litert-german"
+      BRAIN_PROFILE_LABEL="LiteRT German-first"
+      LITERT_LM_MODEL_REPO_VALUE="google/gemma-3n-E2B-it-litert-lm"
+      LITERT_LM_MODEL_FILENAME_VALUE=""
+      LITERT_LM_MODEL_LABEL="German-first Gemma 3n E2B LiteRT-LM"
+      BRAIN_THREADS_DEFAULT="4"
+      BRAIN_CONTEXT_DEFAULT="1536"
+      BRAIN_BATCH_DEFAULT="128"
+      BRAIN_UBATCH_DEFAULT="64"
+      BRAIN_MAX_MESSAGES_DEFAULT="6"
+      ;;
+    5)
+      LLM_PROVIDER="litert-lm"
+      BRAIN_PROFILE_NAME="litert-balanced-multilingual"
+      BRAIN_PROFILE_LABEL="LiteRT Multilingual"
+      LITERT_LM_MODEL_REPO_VALUE="google/gemma-3n-E4B-it-litert-lm"
+      LITERT_LM_MODEL_FILENAME_VALUE=""
+      LITERT_LM_MODEL_LABEL="Gemma 3n E4B LiteRT-LM"
+      BRAIN_THREADS_DEFAULT="4"
+      BRAIN_CONTEXT_DEFAULT="1792"
+      BRAIN_BATCH_DEFAULT="160"
+      BRAIN_UBATCH_DEFAULT="80"
+      BRAIN_MAX_MESSAGES_DEFAULT="8"
+      ;;
+    6)
       LLM_PROVIDER="litert-lm"
       BRAIN_PROFILE_NAME="litert-balanced"
       BRAIN_PROFILE_LABEL="LiteRT Balanced"
@@ -1501,7 +1560,20 @@ pick_litert_model() {
       BRAIN_UBATCH_DEFAULT="96"
       BRAIN_MAX_MESSAGES_DEFAULT="8"
       ;;
-    3)
+    7)
+      LLM_PROVIDER="litert-lm"
+      BRAIN_PROFILE_NAME="litert-quality"
+      BRAIN_PROFILE_LABEL="LiteRT Higher Quality"
+      LITERT_LM_MODEL_REPO_VALUE="litert-community/gemma-4-E4B-it-litert-lm"
+      LITERT_LM_MODEL_FILENAME_VALUE=""
+      LITERT_LM_MODEL_LABEL="Gemma 4 E4B LiteRT-LM"
+      BRAIN_THREADS_DEFAULT="4"
+      BRAIN_CONTEXT_DEFAULT="1792"
+      BRAIN_BATCH_DEFAULT="160"
+      BRAIN_UBATCH_DEFAULT="80"
+      BRAIN_MAX_MESSAGES_DEFAULT="6"
+      ;;
+    8)
       LLM_PROVIDER="litert-lm"
       BRAIN_PROFILE_NAME="litert-custom"
       BRAIN_PROFILE_LABEL="LiteRT Custom"

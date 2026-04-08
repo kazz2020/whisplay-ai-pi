@@ -65,10 +65,29 @@ This updates `OLLAMA_MODEL` in `.env` and optionally restarts `chatbot.service`.
 
 When you choose `LiteRT-LM`, the installer writes `LLM_SERVER=litert-lm` plus `LITERT_LM_MODEL_PATH`, `LITERT_LM_MODEL_REPO`, `LITERT_LM_BACKEND`, and related settings into `.env`.
 
-The initial LiteRT-LM presets are:
+If you want to switch the LiteRT-LM model later without rerunning the full installer, run:
 
-- `Gemma 3n E2B LiteRT-LM`: speed-first local option
-- `Gemma 4 E2B LiteRT-LM`: balanced local option
+```bash
+bash switch_litert_model.sh
+```
+
+This updates the LiteRT model settings in `.env` and can optionally restart `chatbot.service`.
+
+If you only want to inspect which `.litertlm` files are already present locally, run:
+
+```bash
+bash switch_litert_model.sh --list-local
+```
+
+The LiteRT-LM catalog now includes:
+
+- `Gemma 3n E2B Preview`: lowest-RAM experimental option
+- `Gemma 3n E2B LiteRT-LM`: fast multilingual local option
+- `Polish-first Gemma 3n E2B`: lighter Pi preset intended for Polish ASR/TTS pairing
+- `German-first Gemma 3n E2B`: lighter Pi preset intended for German ASR/TTS pairing
+- `Gemma 3n E4B LiteRT-LM`: stronger multilingual option with moderate RAM demand
+- `Gemma 4 E2B LiteRT-LM`: balanced stable local option
+- `Gemma 4 E4B LiteRT-LM`: higher quality local option with higher RAM demand
 - `Custom LiteRT-LM repo`: manual Hugging Face repo entry for `.litertlm` models
 
 The voice selection also sets matching local-language defaults:

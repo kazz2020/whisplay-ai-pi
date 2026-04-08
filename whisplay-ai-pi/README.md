@@ -129,6 +129,28 @@ The Pi 5 installer now also includes an `Ollama Cloud` brain option. If you choo
 
 The installer also now includes a `LiteRT-LM` brain option as a second local method. If you choose it, the installer can install the `litert-lm` Python runtime, download a LiteRT model from Hugging Face, and write the matching `LITERT_LM_*` settings into `.env`.
 
+The LiteRT catalog now includes lower-RAM and multilingual variants such as:
+
+- `Gemma 3n E2B Preview` for the smallest local footprint
+- `Gemma 3n E2B LiteRT-LM` for fast Pi 5 use
+- `Polish-first` and `German-first` Pi-friendly presets based on the multilingual Gemma 3n E2B LiteRT model
+- `Gemma 3n E4B LiteRT-LM` for a stronger multilingual option
+- `Gemma 4 E2B` and `Gemma 4 E4B` LiteRT variants for balanced and higher-quality local use
+
+After installation, you can switch to another local LiteRT-LM model later by running:
+
+```bash
+bash switch_litert_model.sh
+```
+
+The script updates `LITERT_LM_MODEL_PATH` and `LITERT_LM_MODEL_REPO` in `.env`, can download a preset model from Hugging Face, and can restart `chatbot.service` for you.
+
+To only print the LiteRT model files already downloaded on the Pi, run:
+
+```bash
+bash switch_litert_model.sh --list-local
+```
+
 After installation, you can switch to another Ollama model later by running:
 
 ```bash
