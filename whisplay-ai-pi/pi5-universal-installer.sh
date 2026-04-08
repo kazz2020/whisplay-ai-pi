@@ -829,6 +829,35 @@ pick_llama_hf_auth() {
   fi
 }
 
+litert_repo_requires_hf_auth() {
+  case "$1" in
+    google/gemma-*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+ensure_litert_hf_auth() {
+  if ! litert_repo_requires_hf_auth "${LITERT_LM_MODEL_REPO_VALUE:-}"; then
+    return 0
+  fi
+
+  print_note "Selected LiteRT-LM repo is a gated Google Gemma repository on Hugging Face."
+  print_note "You need approved Hugging Face access plus an hf_ token to download it during install."
+
+  if [ -n "${LLAMA_CPP_HF_TOKEN_VALUE:-}" ]; then
+    return 0
+  fi
+
+  if prompt_yes_no "Use a Hugging Face token for LiteRT-LM model access/download" "y"; then
+    LLAMA_CPP_HF_TOKEN_VALUE=$(prompt_required_value "Enter Hugging Face token (hf_...)")
+    return 0
+  fi
+
+  warn "No Hugging Face token provided. LiteRT-LM pre-download will be disabled for this gated repo."
+  DOWNLOAD_LITERT_LM_MODEL=false
+  LITERT_LM_MODEL_PATH_VALUE=$(prompt_required_value "Enter existing local .litertlm model path")
+}
+
 slugify() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//'
 }
@@ -1352,6 +1381,9 @@ download_litert_lm_model() {
   fi
 
   case "${repo_id}" in
+    google/gemma-*)
+      warn "Selected LiteRT-LM model is in a gated Google Gemma repo and needs approved Hugging Face access plus an hf_ token."
+      ;;
     litert-community/gemma-4-E2B-it-litert-lm|litert-community/gemma-4-E4B-it-litert-lm)
       warn "Selected LiteRT-LM model is a multi-GB Gemma 4 build. On a Pi 5 this can look hung during download and may cause heavy IO pressure."
       ;;
@@ -1361,31 +1393,40 @@ download_litert_lm_model() {
   download_output=$(REPO_ID="${repo_id}" TARGET_ROOT="${target_root}" FILENAME_HINT="${filename_hint}" HF_TOKEN_VALUE="${LLAMA_CPP_HF_TOKEN_VALUE:-}" python3 - <<'PY'
 from pathlib import Path
 import os
+import sys
 
 from huggingface_hub import hf_hub_download, list_repo_files
+from huggingface_hub.errors import GatedRepoError
 
 repo_id = os.environ["REPO_ID"]
 target_root = Path(os.environ["TARGET_ROOT"]).expanduser()
 filename_hint = os.environ.get("FILENAME_HINT", "").strip()
 token = os.environ.get("HF_TOKEN_VALUE", "").strip() or None
 
-files = list_repo_files(repo_id=repo_id, repo_type="model", token=token)
-candidate = filename_hint if filename_hint and filename_hint in files else ""
-if not candidate:
+try:
+  files = list_repo_files(repo_id=repo_id, repo_type="model", token=token)
+  candidate = filename_hint if filename_hint and filename_hint in files else ""
+  if not candidate:
     litert_files = [f for f in files if f.endswith(".litertlm")]
     if not litert_files:
-        raise SystemExit(f"No .litertlm file found in {repo_id}")
+      raise SystemExit(f"No .litertlm file found in {repo_id}")
     candidate = litert_files[0]
 
-download_path = hf_hub_download(
+  download_path = hf_hub_download(
     repo_id=repo_id,
     filename=candidate,
     repo_type="model",
     token=token,
     local_dir=str(target_root),
-)
-print(candidate)
-print(download_path)
+  )
+  print(candidate)
+  print(download_path)
+except GatedRepoError:
+  print(
+    f"GATED_REPO: {repo_id} requires approved Hugging Face access and an hf_ token.",
+    file=sys.stderr,
+  )
+  raise SystemExit(2)
 PY
 )
   download_path=$(printf '%s\n' "${download_output}" | tail -n 1)
@@ -1485,6 +1526,7 @@ pick_litert_model() {
 
   print_note "Polish-first and German-first use the same multilingual Gemma 3n LiteRT model with lighter Pi-friendly defaults."
   print_note "Gemma 4 LiteRT models are much larger and can make a Pi look stuck during download. Use Gemma 3n E2B unless you explicitly want the heavier option."
+  print_note "Google Gemma LiteRT repos require approved Hugging Face access if you want the installer to download them for you."
 
   case "${choice}" in
     1)
@@ -1632,6 +1674,7 @@ pick_llm_runtime_mode() {
       if prompt_yes_no "Pre-download LiteRT-LM model during install" "n"; then
         DOWNLOAD_LITERT_LM_MODEL=true
         LITERT_LM_MODEL_PATH_VALUE=""
+        ensure_litert_hf_auth
       else
         DOWNLOAD_LITERT_LM_MODEL=false
         LITERT_LM_MODEL_PATH_VALUE=$(prompt_required_value "Enter existing local .litertlm model path")
@@ -2220,11 +2263,13 @@ set_env_value "${CHATBOT_ENV_FILE}" "TTS_SERVER" "${TTS_SERVER_SELECTION}"
 set_env_value "${CHATBOT_ENV_FILE}" "SERVE_LLAMA_CPP" "${SERVE_LLAMA_CPP_VALUE}"
 set_env_value "${CHATBOT_ENV_FILE}" "SERVE_OLLAMA" "${SERVE_OLLAMA_VALUE}"
 set_env_value "${CHATBOT_ENV_FILE}" "SERVE_QDRANT" "${SERVE_QDRANT_VALUE}"
+if [ -n "${LLAMA_CPP_HF_TOKEN_VALUE:-}" ]; then
+  set_env_value "${CHATBOT_ENV_FILE}" "HF_TOKEN" "${LLAMA_CPP_HF_TOKEN_VALUE}"
+fi
 if [ "${LLM_SERVER_SELECTION}" = "llama.cpp" ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_HF_REPO" "${LLAMA_HF_REPO}"
   if [ -n "${LLAMA_CPP_HF_TOKEN_VALUE:-}" ]; then
     set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_HF_TOKEN" "${LLAMA_CPP_HF_TOKEN_VALUE}"
-    set_env_value "${CHATBOT_ENV_FILE}" "HF_TOKEN" "${LLAMA_CPP_HF_TOKEN_VALUE}"
   fi
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_MODEL" "${LLAMA_ALIAS}"
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_ALIAS" "${LLAMA_ALIAS}"
