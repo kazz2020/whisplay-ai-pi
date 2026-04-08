@@ -30,6 +30,7 @@ export enum LLMServer {
   volcengine = "volcengine",
   openai = "openai",
   llamacpp = "llama.cpp",
+  litertlm = "litert-lm",
   ollama = "ollama",
   ollamacloud = "ollama-cloud",
   gemini = "gemini",

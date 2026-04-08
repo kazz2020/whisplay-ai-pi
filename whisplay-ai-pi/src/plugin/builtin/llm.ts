@@ -51,6 +51,22 @@ export function registerLLMPlugins(): void {
   } as LLMPlugin);
 
   pluginRegistry.register({
+    name: "litert-lm",
+    displayName: "LiteRT-LM LLM",
+    version: "1.0.0",
+    type: "llm",
+    description: "LiteRT-LM local large language model via Python bridge",
+    activate: () => {
+      const mod = require("../../cloud-api/local/litert-lm").default;
+      return {
+        chatWithLLMStream: mod.chatWithLLMStream,
+        resetChatHistory: mod.resetChatHistory,
+        summaryTextWithLLM: mod.summaryTextWithLLM,
+      };
+    },
+  } as LLMPlugin);
+
+  pluginRegistry.register({
     name: "ollama",
     displayName: "Ollama LLM",
     version: "1.0.0",

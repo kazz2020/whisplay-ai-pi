@@ -1,6 +1,7 @@
 // Common definitions for local API services
 export enum defaultPortMap {
   llamaCpp = 8080,
+  litertLm = 8810,
   ollama = 11434,
   llm8850llm = 8000,
   llm8850whisper = 8801,

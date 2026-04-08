@@ -88,7 +88,7 @@ This repository now includes a fully local Raspberry Pi 5 8GB path using:
 
 - Whisplay HAT driver installation
 - local ASR with faster-whisper
-- local LLM with `llama.cpp` `llama-server`
+- local LLM with `llama.cpp` `llama-server` or LiteRT-LM
 - local TTS with Piper HTTP
 
 For a fresh Raspberry Pi OS install, run:
@@ -97,7 +97,12 @@ For a fresh Raspberry Pi OS install, run:
 bash pi5-universal-installer.sh
 ```
 
-The installer lets you choose whether to install the HAT driver, chatbot dependencies, local ASR/TTS, llama.cpp, the chatbot build, and the startup service.
+The installer lets you choose whether to install the HAT driver, chatbot dependencies, local ASR/TTS, llama.cpp, LiteRT-LM, the chatbot build, and the startup service.
+
+The Pi installer now supports two different fully local LLM backends:
+
+- `llama.cpp` for GGUF-based local models served by `llama-server`
+- `litert-lm` for `.litertlm` models such as Gemma 3n or Gemma 4 LiteRT builds
 
 The installer can also enable wake word detection. If you want the most reliable ready-made English option, choose `openWakeWord` with a preset like `hey_jarvis`. If you want your own custom phrase, choose `local-wake` and record reference samples directly on the device.
 
@@ -121,6 +126,8 @@ bash scripts/setup_local_wakeword.sh
 ```
 
 The Pi 5 installer now also includes an `Ollama Cloud` brain option. If you choose it, the installer prompts for `OLLAMA_API_KEY` and writes the cloud model settings into `.env` automatically.
+
+The installer also now includes a `LiteRT-LM` brain option as a second local method. If you choose it, the installer can install the `litert-lm` Python runtime, download a LiteRT model from Hugging Face, and write the matching `LITERT_LM_*` settings into `.env`.
 
 After installation, you can switch to another Ollama model later by running:
 

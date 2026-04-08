@@ -4,7 +4,7 @@ This repo now supports both a fully local Raspberry Pi 5 setup and a Pi-hosted a
 
 - Whisplay HAT drivers from PiSugar Whisplay
 - Local ASR with faster-whisper
-- Local LLM with llama.cpp `llama-server` or remote LLM with Ollama Cloud
+- Local LLM with llama.cpp `llama-server`, LiteRT-LM, or remote LLM with Ollama Cloud
 - Local TTS with Piper HTTP
 - Optional RAG using Qdrant plus Ollama embeddings
 - Image generation disabled by default so the preset stays fully local
@@ -41,17 +41,18 @@ The installer now offers these Pi-oriented brain profiles:
 - `Balanced`: Qwen2.5 1.5B, best default on Pi 5 8GB
 - `Higher quality`: Gemma 2 2B, slower but a bit stronger
 - `Custom`: manual Hugging Face GGUF repo entry
+- `LiteRT-LM`: LiteRT local model path using `.litertlm` models such as Gemma 3n or Gemma 4 E2B
 - `Ollama Cloud`: `gemma3:27b-cloud`, prompts for `OLLAMA_API_KEY`
 
 When you choose a brain profile, the installer also writes matching defaults for threads, context size, batch size, ubatch size, and chat history length into `.env`.
 
-<<<<<<< HEAD
 The installer also now lets you choose the LLM runtime mode:
 
-- `Local llama.cpp on the Pi`: fully offline
+- `Local llama.cpp on the Pi`: fully offline GGUF path
+- `Local LiteRT-LM on the Pi`: fully offline `.litertlm` path
 - `Ollama on another computer in your LAN`: free and no API key, but needs another machine
 - `DeepSeek API via OpenAI-compatible endpoint`: online mode for users who already have a DeepSeek key
-=======
+
 When you choose `Ollama Cloud`, the installer instead writes `LLM_SERVER=ollama-cloud`, `OLLAMA_ENDPOINT`, `OLLAMA_MODEL`, and `OLLAMA_API_KEY` into `.env`, and skips local llama.cpp setup.
 
 If you want to change the cloud model later without rerunning the full installer, run:
@@ -61,7 +62,14 @@ bash switch_ollama_model.sh
 ```
 
 This updates `OLLAMA_MODEL` in `.env` and optionally restarts `chatbot.service`.
->>>>>>> 9d61f47 (ollama cloud added)
+
+When you choose `LiteRT-LM`, the installer writes `LLM_SERVER=litert-lm` plus `LITERT_LM_MODEL_PATH`, `LITERT_LM_MODEL_REPO`, `LITERT_LM_BACKEND`, and related settings into `.env`.
+
+The initial LiteRT-LM presets are:
+
+- `Gemma 3n E2B LiteRT-LM`: speed-first local option
+- `Gemma 4 E2B LiteRT-LM`: balanced local option
+- `Custom LiteRT-LM repo`: manual Hugging Face repo entry for `.litertlm` models
 
 The voice selection also sets matching local-language defaults:
 

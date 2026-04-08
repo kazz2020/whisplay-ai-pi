@@ -9,6 +9,7 @@ DRIVER_REPO_URL="https://github.com/PiSugar/whisplay.git"
 LLAMA_REPO_URL="https://github.com/ggml-org/llama.cpp.git"
 DEFAULT_PIPER_DIR="${HOME}/piper"
 DEFAULT_SHERPA_ONNX_TTS_DIR="${HOME}/sherpa-onnx-tts"
+DEFAULT_LITERT_LM_MODEL_DIR="${HOME}/litert-lm-models"
 DRIVER_REBOOT_RECOMMENDED=false
 ASR_LANGUAGE="en"
 ASR_LANGUAGE_LABEL="English"
@@ -22,6 +23,17 @@ SERVE_QDRANT_VALUE="false"
 OLLAMA_ENDPOINT_VALUE="http://192.168.1.100:11434"
 OLLAMA_MODEL_VALUE="gemma3:4b"
 OLLAMA_ENABLE_TOOLS_VALUE="false"
+LITERT_LM_HOST_VALUE="127.0.0.1"
+LITERT_LM_PORT_VALUE="8810"
+LITERT_LM_MODEL_DIR="${DEFAULT_LITERT_LM_MODEL_DIR}"
+LITERT_LM_MODEL_REPO_VALUE="litert-community/gemma-4-E2B-it-litert-lm"
+LITERT_LM_MODEL_FILENAME_VALUE=""
+LITERT_LM_MODEL_LABEL="Gemma 4 E2B LiteRT-LM"
+LITERT_LM_MODEL_PATH_VALUE=""
+LITERT_LM_BACKEND_VALUE="cpu"
+LITERT_LM_ENABLE_SPECULATIVE_DECODING_VALUE="auto"
+LITERT_LM_CACHE_DIR_VALUE="${HOME}/.cache/litert-lm"
+LITERT_LM_ENABLE_TOOLS_VALUE="false"
 OPENAI_API_BASE_URL_VALUE="https://api.deepseek.com/v1"
 OPENAI_API_KEY_VALUE=""
 OPENAI_LLM_MODEL_VALUE="deepseek-chat"
@@ -85,6 +97,8 @@ SHERPA_ONNX_TTS_PROVIDER_VALUE="cpu"
 SHERPA_ONNX_TTS_SPEAKER_ID_VALUE="0"
 SHERPA_ONNX_TTS_SPEED_VALUE="1.0"
 DOWNLOAD_SHERPA_ONNX_TTS_MODEL=true
+INSTALL_LITERT_LM=false
+DOWNLOAD_LITERT_LM_MODEL=false
 
 if [ -t 1 ]; then
   COLOR_RESET=$(printf '\033[0m')
@@ -194,6 +208,7 @@ print_final_review() {
   print_subsection "Install plan"
   print_review_item "Install driver" "$(format_enabled "${INSTALL_DRIVER}")"
   print_review_item "Install dependencies" "$(format_enabled "${INSTALL_CHATBOT_DEPS}")"
+  print_review_item "Install LiteRT-LM" "$(format_enabled "${INSTALL_LITERT_LM}")"
   print_review_item "Install local ASR" "$(format_enabled "${INSTALL_LOCAL_ASR}")"
   print_review_item "Install local TTS" "$(format_enabled "${INSTALL_LOCAL_TTS}")"
   print_review_item "Build chatbot app" "$(format_enabled "${BUILD_CHATBOT}")"
@@ -212,6 +227,15 @@ print_final_review() {
     print_review_item "llama.cpp repo dir" "${LLAMA_DIR}"
     print_review_item "Threads / ctx" "${CHATBOT_THREADS} / ${CHATBOT_CONTEXT}"
     print_review_item "Batch / ubatch" "${CHATBOT_BATCH} / ${CHATBOT_UBATCH}"
+  elif [ "${LLM_SERVER_SELECTION}" = "litert-lm" ]; then
+    print_review_item "LLM runtime" "local LiteRT-LM"
+    print_review_item "Brain profile" "${BRAIN_PROFILE_LABEL}"
+    print_review_item "LiteRT repo" "${LITERT_LM_MODEL_REPO_VALUE}"
+    print_review_item "LiteRT model" "${LITERT_LM_MODEL_LABEL}"
+    print_review_item "Install LiteRT-LM" "$(format_enabled "${INSTALL_LITERT_LM}")"
+    print_review_item "Pre-download model" "$(format_enabled "${DOWNLOAD_LITERT_LM_MODEL}")"
+    print_review_item "LiteRT host / port" "${LITERT_LM_HOST_VALUE} / ${LITERT_LM_PORT_VALUE}"
+    print_review_item "LiteRT backend" "${LITERT_LM_BACKEND_VALUE}"
   elif [ "${LLM_SERVER_SELECTION}" = "ollama" ]; then
     print_review_item "LLM runtime" "LAN Ollama"
     print_review_item "Profile" "${BRAIN_PROFILE_LABEL}"
@@ -312,6 +336,17 @@ reset_install_choices() {
   OLLAMA_ENDPOINT_VALUE="http://192.168.1.100:11434"
   OLLAMA_MODEL_VALUE="gemma3:4b"
   OLLAMA_ENABLE_TOOLS_VALUE="false"
+  LITERT_LM_HOST_VALUE="127.0.0.1"
+  LITERT_LM_PORT_VALUE="8810"
+  LITERT_LM_MODEL_DIR="${DEFAULT_LITERT_LM_MODEL_DIR}"
+  LITERT_LM_MODEL_REPO_VALUE="litert-community/gemma-4-E2B-it-litert-lm"
+  LITERT_LM_MODEL_FILENAME_VALUE=""
+  LITERT_LM_MODEL_LABEL="Gemma 4 E2B LiteRT-LM"
+  LITERT_LM_MODEL_PATH_VALUE=""
+  LITERT_LM_BACKEND_VALUE="cpu"
+  LITERT_LM_ENABLE_SPECULATIVE_DECODING_VALUE="auto"
+  LITERT_LM_CACHE_DIR_VALUE="${HOME}/.cache/litert-lm"
+  LITERT_LM_ENABLE_TOOLS_VALUE="false"
   OLLAMA_API_KEY_VALUE=""
   OPENAI_API_BASE_URL_VALUE="https://api.deepseek.com/v1"
   OPENAI_API_KEY_VALUE=""
@@ -375,6 +410,8 @@ reset_install_choices() {
   SHERPA_ONNX_TTS_SPEAKER_ID_VALUE="0"
   SHERPA_ONNX_TTS_SPEED_VALUE="1.0"
   DOWNLOAD_SHERPA_ONNX_TTS_MODEL=true
+  INSTALL_LITERT_LM=false
+  DOWNLOAD_LITERT_LM_MODEL=false
   INSTALL_DRIVER=false
   INSTALL_CHATBOT_DEPS=false
   INSTALL_LLAMA_CPP=false
@@ -1302,6 +1339,68 @@ PY
   return 0
 }
 
+download_litert_lm_model() {
+  local repo_id="${LITERT_LM_MODEL_REPO_VALUE}"
+  local target_root="${LITERT_LM_MODEL_DIR}"
+  local filename_hint="${LITERT_LM_MODEL_FILENAME_VALUE:-}"
+  local download_output
+  local download_path
+
+  if [ -z "${repo_id}" ]; then
+    warn "Skipping LiteRT-LM download because no Hugging Face repository was configured"
+    return 1
+  fi
+
+  mkdir -p "${target_root}"
+  download_output=$(REPO_ID="${repo_id}" TARGET_ROOT="${target_root}" FILENAME_HINT="${filename_hint}" HF_TOKEN_VALUE="${LLAMA_CPP_HF_TOKEN_VALUE:-}" python3 - <<'PY'
+from pathlib import Path
+import os
+
+from huggingface_hub import hf_hub_download, list_repo_files
+
+repo_id = os.environ["REPO_ID"]
+target_root = Path(os.environ["TARGET_ROOT"]).expanduser()
+filename_hint = os.environ.get("FILENAME_HINT", "").strip()
+token = os.environ.get("HF_TOKEN_VALUE", "").strip() or None
+
+files = list_repo_files(repo_id=repo_id, repo_type="model", token=token)
+candidate = filename_hint if filename_hint and filename_hint in files else ""
+if not candidate:
+    litert_files = [f for f in files if f.endswith(".litertlm")]
+    if not litert_files:
+        raise SystemExit(f"No .litertlm file found in {repo_id}")
+    candidate = litert_files[0]
+
+download_path = hf_hub_download(
+    repo_id=repo_id,
+    filename=candidate,
+    repo_type="model",
+    token=token,
+    resume_download=True,
+    local_dir=str(target_root),
+    local_dir_use_symlinks=False,
+)
+print(candidate)
+print(download_path)
+PY
+)
+  download_path=$(printf '%s\n' "${download_output}" | tail -n 1)
+  LITERT_LM_MODEL_FILENAME_VALUE=$(printf '%s\n' "${download_output}" | tail -n 2 | head -n 1)
+
+  if [ -z "${download_path}" ] || [ ! -f "${download_path}" ]; then
+    warn "LiteRT-LM pre-download did not return a valid model path"
+    return 1
+  fi
+
+  export LITERT_LM_MODEL_PATH_VALUE="${download_path}"
+  if [ -n "${CHATBOT_ENV_FILE:-}" ] && [ -f "${CHATBOT_ENV_FILE}" ]; then
+    set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_MODEL_PATH" "${download_path}"
+    set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_MODEL_REPO" "${repo_id}"
+  fi
+  log "LiteRT-LM model ready at: ${download_path}"
+  return 0
+}
+
 pick_llm_repo() {
   local choice
   choice=$(choose_from_menu \
@@ -1366,15 +1465,76 @@ pick_llm_repo() {
   esac
 }
 
+pick_litert_model() {
+  local choice
+  choice=$(choose_from_menu \
+    "Select the LiteRT-LM local model" \
+    "2" \
+    "1|Fastest: Gemma 3n E2B LiteRT-LM" \
+    "2|Balanced: Gemma 4 E2B LiteRT-LM (recommended)" \
+    "3|Custom LiteRT-LM Hugging Face repo")
+
+  case "${choice}" in
+    1)
+      LLM_PROVIDER="litert-lm"
+      BRAIN_PROFILE_NAME="litert-fast"
+      BRAIN_PROFILE_LABEL="LiteRT Fast"
+      LITERT_LM_MODEL_REPO_VALUE="google/gemma-3n-E2B-it-litert-lm"
+      LITERT_LM_MODEL_FILENAME_VALUE=""
+      LITERT_LM_MODEL_LABEL="Gemma 3n E2B LiteRT-LM"
+      BRAIN_THREADS_DEFAULT="4"
+      BRAIN_CONTEXT_DEFAULT="1536"
+      BRAIN_BATCH_DEFAULT="128"
+      BRAIN_UBATCH_DEFAULT="64"
+      BRAIN_MAX_MESSAGES_DEFAULT="8"
+      ;;
+    2)
+      LLM_PROVIDER="litert-lm"
+      BRAIN_PROFILE_NAME="litert-balanced"
+      BRAIN_PROFILE_LABEL="LiteRT Balanced"
+      LITERT_LM_MODEL_REPO_VALUE="litert-community/gemma-4-E2B-it-litert-lm"
+      LITERT_LM_MODEL_FILENAME_VALUE=""
+      LITERT_LM_MODEL_LABEL="Gemma 4 E2B LiteRT-LM"
+      BRAIN_THREADS_DEFAULT="4"
+      BRAIN_CONTEXT_DEFAULT="2048"
+      BRAIN_BATCH_DEFAULT="192"
+      BRAIN_UBATCH_DEFAULT="96"
+      BRAIN_MAX_MESSAGES_DEFAULT="8"
+      ;;
+    3)
+      LLM_PROVIDER="litert-lm"
+      BRAIN_PROFILE_NAME="litert-custom"
+      BRAIN_PROFILE_LABEL="LiteRT Custom"
+      LITERT_LM_MODEL_REPO_VALUE=$(prompt_value "Enter LiteRT-LM HF repo" "litert-community/gemma-4-E2B-it-litert-lm")
+      LITERT_LM_MODEL_FILENAME_VALUE=$(prompt_value "Optional exact .litertlm filename (leave blank to auto-detect)" "")
+      LITERT_LM_MODEL_LABEL=$(prompt_value "Enter LiteRT-LM model label" "Custom LiteRT-LM model")
+      BRAIN_THREADS_DEFAULT="4"
+      BRAIN_CONTEXT_DEFAULT="2048"
+      BRAIN_BATCH_DEFAULT="192"
+      BRAIN_UBATCH_DEFAULT="96"
+      BRAIN_MAX_MESSAGES_DEFAULT="8"
+      ;;
+    *)
+      die "Invalid LiteRT-LM model choice"
+      ;;
+  esac
+
+  LITERT_LM_HOST_VALUE=$(prompt_value "Enter LiteRT-LM host" "${LITERT_LM_HOST_VALUE}")
+  LITERT_LM_PORT_VALUE=$(prompt_value "Enter LiteRT-LM port" "${LITERT_LM_PORT_VALUE}")
+  LITERT_LM_BACKEND_VALUE=$(prompt_value "Enter LiteRT-LM backend" "${LITERT_LM_BACKEND_VALUE}")
+  LITERT_LM_ENABLE_SPECULATIVE_DECODING_VALUE=$(prompt_value "LiteRT-LM speculative decoding (auto/true/false)" "${LITERT_LM_ENABLE_SPECULATIVE_DECODING_VALUE}")
+}
+
 pick_llm_runtime_mode() {
   local choice
   choice=$(choose_from_menu \
     "Select the LLM runtime mode" \
     "1" \
     "1|Local llama.cpp on the Raspberry Pi (offline)" \
-    "2|Ollama on another computer in your LAN (free, no API key)" \
-    "3|DeepSeek API via OpenAI-compatible endpoint (online)" \
-    "4|Ollama Cloud via ollama.com API")
+    "2|Local LiteRT-LM on the Raspberry Pi (offline experimental option)" \
+    "3|Ollama on another computer in your LAN (free, no API key)" \
+    "4|DeepSeek API via OpenAI-compatible endpoint (online)" \
+    "5|Ollama Cloud via ollama.com API")
 
   case "${choice}" in
     1)
@@ -1384,6 +1544,27 @@ pick_llm_runtime_mode() {
       SERVE_OLLAMA_VALUE="false"
       ;;
     2)
+      LLM_SERVER_SELECTION="litert-lm"
+      LLM_PROVIDER="litert-lm"
+      SERVE_LLAMA_CPP_VALUE="false"
+      SERVE_OLLAMA_VALUE="false"
+      pick_litert_model
+      if prompt_yes_no "Install LiteRT-LM runtime on this Pi" "y"; then
+        INSTALL_LITERT_LM=true
+      fi
+      if prompt_yes_no "Pre-download LiteRT-LM model during install" "y"; then
+        DOWNLOAD_LITERT_LM_MODEL=true
+        LITERT_LM_MODEL_PATH_VALUE=""
+      else
+        DOWNLOAD_LITERT_LM_MODEL=false
+        LITERT_LM_MODEL_PATH_VALUE=$(prompt_required_value "Enter existing local .litertlm model path")
+      fi
+      if prompt_yes_no "Skip local llama.cpp install and GGUF pre-download for this LiteRT-LM setup" "y"; then
+        INSTALL_LLAMA_CPP=false
+        DOWNLOAD_LLM_MODEL=false
+      fi
+      ;;
+    3)
       LLM_SERVER_SELECTION="ollama"
       LLM_PROVIDER="ollama"
       SERVE_LLAMA_CPP_VALUE="false"
@@ -1398,7 +1579,7 @@ pick_llm_runtime_mode() {
         DOWNLOAD_LLM_MODEL=false
       fi
       ;;
-    3)
+    4)
       LLM_SERVER_SELECTION="openai"
       LLM_PROVIDER="openai"
       SERVE_LLAMA_CPP_VALUE="false"
@@ -1414,7 +1595,7 @@ pick_llm_runtime_mode() {
         DOWNLOAD_LLM_MODEL=false
       fi
       ;;
-    4)
+    5)
       LLM_SERVER_SELECTION="ollama-cloud"
       LLM_PROVIDER="ollama-cloud"
       SERVE_LLAMA_CPP_VALUE="false"
@@ -1850,6 +2031,7 @@ while true; do
   if prompt_yes_no "Install Whisplay HAT driver" "y"; then INSTALL_DRIVER=true; fi
   if prompt_yes_no "Install chatbot dependencies (Node, Python, fonts)" "y"; then INSTALL_CHATBOT_DEPS=true; fi
   if prompt_yes_no "Build and install llama.cpp server" "y"; then INSTALL_LLAMA_CPP=true; fi
+  if prompt_yes_no "Install LiteRT-LM runtime" "n"; then INSTALL_LITERT_LM=true; fi
   if prompt_yes_no "Install local ASR (faster-whisper)" "y"; then INSTALL_LOCAL_ASR=true; fi
   if prompt_yes_no "Install local TTS runtime" "y"; then INSTALL_LOCAL_TTS=true; fi
   if prompt_yes_no "Install wake word detection" "y"; then INSTALL_WAKE_WORD=true; fi
@@ -1883,6 +2065,9 @@ while true; do
   if [ "${LLM_SERVER_SELECTION}" = "ollama" ]; then
     log "Selected brain profile: ${BRAIN_PROFILE_LABEL}"
     log "LLM mode: Ollama on LAN (${OLLAMA_ENDPOINT_VALUE}, model ${OLLAMA_MODEL_VALUE})"
+  elif [ "${LLM_SERVER_SELECTION}" = "litert-lm" ]; then
+    log "Selected brain profile: ${BRAIN_PROFILE_LABEL}"
+    log "LLM mode: LiteRT-LM (${LITERT_LM_MODEL_REPO_VALUE})"
   elif [ "${LLM_SERVER_SELECTION}" = "openai" ]; then
     log "Selected brain profile: ${BRAIN_PROFILE_LABEL}"
     log "LLM mode: online OpenAI-compatible endpoint (${OPENAI_API_BASE_URL_VALUE}, model ${OPENAI_LLM_MODEL_VALUE})"
@@ -1913,6 +2098,9 @@ while true; do
     CHATBOT_CONTEXT=$(prompt_value "llama.cpp context size" "${CHATBOT_CONTEXT}")
     CHATBOT_BATCH=$(prompt_value "llama.cpp batch size" "${CHATBOT_BATCH}")
     CHATBOT_UBATCH=$(prompt_value "llama.cpp ubatch size" "${CHATBOT_UBATCH}")
+  elif [ "${LLM_SERVER_SELECTION}" = "litert-lm" ]; then
+    LITERT_LM_MODEL_DIR=$(prompt_value "LiteRT-LM model directory" "${DEFAULT_LITERT_LM_MODEL_DIR}")
+    LITERT_LM_CACHE_DIR_VALUE=$(prompt_value "LiteRT-LM cache directory" "${LITERT_LM_CACHE_DIR_VALUE}")
   fi
   CHATBOT_MAX_MESSAGES=$(prompt_value "chat history message limit" "${CHATBOT_MAX_MESSAGES}")
 
@@ -1967,9 +2155,23 @@ if [ "${LLM_SERVER_SELECTION}" = "llama.cpp" ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_CONTEXT_SIZE" "${CHATBOT_CONTEXT}"
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_BATCH_SIZE" "${CHATBOT_BATCH}"
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_UBATCH_SIZE" "${CHATBOT_UBATCH}"
+elif [ "${LLM_SERVER_SELECTION}" = "litert-lm" ]; then
+  set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_HOST" "${LITERT_LM_HOST_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_PORT" "${LITERT_LM_PORT_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_MODEL_REPO" "${LITERT_LM_MODEL_REPO_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_BACKEND" "${LITERT_LM_BACKEND_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_ENABLE_SPECULATIVE_DECODING" "${LITERT_LM_ENABLE_SPECULATIVE_DECODING_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_CACHE_DIR" "${LITERT_LM_CACHE_DIR_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_ENABLE_TOOLS" "${LITERT_LM_ENABLE_TOOLS_VALUE}"
+  if [ -n "${LITERT_LM_MODEL_PATH_VALUE:-}" ]; then
+    set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_MODEL_PATH" "${LITERT_LM_MODEL_PATH_VALUE}"
+  fi
 fi
 set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_MAX_MESSAGES_LENGTH" "${CHATBOT_MAX_MESSAGES}"
 set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_ENABLE_TOOLS" "false"
+if [ "${LLM_SERVER_SELECTION}" = "litert-lm" ]; then
+  set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_MAX_MESSAGES_LENGTH" "${CHATBOT_MAX_MESSAGES}"
+fi
 
 set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_MODEL_SIZE_OR_PATH" "${ASR_MODEL}"
 set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_LANGUAGE" "${ASR_LANGUAGE}"
@@ -2055,6 +2257,20 @@ elif [ "${LLM_SERVER_SELECTION}" = "llama.cpp" ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_BATCH_SIZE" "${CHATBOT_BATCH}"
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_UBATCH_SIZE" "${CHATBOT_UBATCH}"
   set_env_value "${CHATBOT_ENV_FILE}" "LLAMA_CPP_MAX_MESSAGES_LENGTH" "${CHATBOT_MAX_MESSAGES}"
+elif [ "${LLM_SERVER_SELECTION}" = "litert-lm" ]; then
+  set_env_value "${CHATBOT_ENV_FILE}" "LLM_SERVER" "litert-lm"
+  set_env_value "${CHATBOT_ENV_FILE}" "SERVE_LLAMA_CPP" "false"
+  set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_HOST" "${LITERT_LM_HOST_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_PORT" "${LITERT_LM_PORT_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_MODEL_REPO" "${LITERT_LM_MODEL_REPO_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_BACKEND" "${LITERT_LM_BACKEND_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_ENABLE_SPECULATIVE_DECODING" "${LITERT_LM_ENABLE_SPECULATIVE_DECODING_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_CACHE_DIR" "${LITERT_LM_CACHE_DIR_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_MAX_MESSAGES_LENGTH" "${CHATBOT_MAX_MESSAGES}"
+  set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_ENABLE_TOOLS" "${LITERT_LM_ENABLE_TOOLS_VALUE}"
+  if [ -n "${LITERT_LM_MODEL_PATH_VALUE:-}" ]; then
+    set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_MODEL_PATH" "${LITERT_LM_MODEL_PATH_VALUE}"
+  fi
 fi
 
 if [ "${INSTALL_DRIVER}" = true ]; then
@@ -2071,6 +2287,11 @@ if [ "${INSTALL_CHATBOT_DEPS}" = true ]; then
   log "Installing chatbot dependencies"
   cd "${PROJECT_ROOT}"
   bash install_dependencies.sh
+fi
+
+if [ "${INSTALL_LITERT_LM}" = true ]; then
+  log "Installing LiteRT-LM dependencies"
+  python3 -m pip install --break-system-packages litert-lm huggingface-hub Flask
 fi
 
 chmod +x "${PROJECT_ROOT}/scripts/serve_llama_cpp.sh" "${PROJECT_ROOT}/scripts/install_llama_cpp.sh" "${PROJECT_ROOT}/scripts/install_ollama.sh" "${PROJECT_ROOT}/scripts/optimize_pi_memory.sh" 2>/dev/null || true
@@ -2149,6 +2370,12 @@ if [ "${DOWNLOAD_LLM_MODEL}" = true ]; then
   if ! download_llama_cpp_model; then
     warn "Skipping llama.cpp pre-download. The assistant can still work; the first model start may just take longer."
     warn "If needed later, start the chatbot once or run /usr/local/bin/llama-server -hf ${LLAMA_HF_REPO} manually on the Pi to populate the cache."
+  fi
+fi
+
+if [ "${DOWNLOAD_LITERT_LM_MODEL}" = true ]; then
+  if ! download_litert_lm_model; then
+    warn "Skipping LiteRT-LM pre-download. The assistant can still work after you place a .litertlm file locally and set LITERT_LM_MODEL_PATH in .env."
   fi
 fi
 
