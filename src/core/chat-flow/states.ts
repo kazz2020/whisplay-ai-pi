@@ -16,6 +16,8 @@ import {
   recordFileFormat,
   getDynamicVoiceDetectLevel,
   stopRecording,
+  startThinkingSound,
+  stopThinkingSound,
 } from "../../device/audio";
 import { chatWithLLMStream } from "../../cloud-api/server";
 import { isImMode } from "../../cloud-api/llm";
@@ -320,12 +322,14 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
   answer: (ctx: ChatFlowContext) => {
     ctx.enterMusicAfterAnswer = false;
     ctx.musicDisplayText = "";
+    stopThinkingSound();
     display({
       status: "answering...",
       RGB: "#00c8a3",
     });
     const currentAnswerId = ctx.answerId;
     const interruptToListening = () => {
+      stopThinkingSound();
       ctx.interruptCurrentAnswer();
       clearPendingCapturedImgForChat();
       display({ image_icon_visible: false });
@@ -376,6 +380,7 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
     } = ctx.streamResponser;
     ctx.partialThinking = "";
     ctx.thinkingSentences = [];
+    startThinkingSound();
     [() => Promise.resolve().then(() => ""), getSystemPromptWithKnowledge]
     [enableRAG ? 1 : 0](ctx.asrText)
       .then((res: string) => {
@@ -405,10 +410,16 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
             if (currentAnswerId !== ctx.answerId) {
               return;
             }
+            stopThinkingSound();
             ctx.appendPendingAssistantText(text);
             partial(text);
           },
-          () => currentAnswerId === ctx.answerId && endPartial(),
+          () => {
+            stopThinkingSound();
+            if (currentAnswerId === ctx.answerId) {
+              endPartial();
+            }
+          },
           (partialThinking) =>
             currentAnswerId === ctx.answerId &&
             ctx.partialThinkingCallback(partialThinking),
@@ -446,8 +457,14 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
             }
           },
         );
+      })
+      .catch((err) => {
+        stopThinkingSound();
+        console.error("Error while preparing answer prompt:", err);
+        ctx.transitionTo("sleep");
       });
     getPlayEndPromise().then(() => {
+      stopThinkingSound();
       if (ctx.currentFlowName === "answer" && currentAnswerId === ctx.answerId) {
         ctx.commitPendingAssistantResponse();
         clearPendingCapturedImgForChat();

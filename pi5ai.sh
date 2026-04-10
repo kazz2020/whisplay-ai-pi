@@ -48,6 +48,7 @@ GOOGLE_CLOUD_TTS_LANGUAGE_CODE_VALUE="en-US"
 GOOGLE_CLOUD_TTS_VOICE_NAME_VALUE=""
 GOOGLE_CLOUD_TTS_SSML_GENDER_VALUE="NEUTRAL"
 ENABLE_THINKING_VALUE="false"
+THINKING_SOUND_ENABLED_VALUE="false"
 USE_CAPTURED_IMAGE_IN_CHAT_VALUE="false"
 LLAMA_CPP_HF_TOKEN_VALUE="${HF_TOKEN:-}"
 ENABLE_RAG_VALUE="false"
@@ -290,6 +291,7 @@ print_final_review() {
     print_review_item "Pre-download TTS" "$(format_enabled "${DOWNLOAD_SHERPA_ONNX_TTS_MODEL}")"
   fi
   print_review_item "Thinking mode" "${ENABLE_THINKING_VALUE}"
+  print_review_item "Thinking sound" "${THINKING_SOUND_ENABLED_VALUE}"
   print_review_item "Use camera in chat" "${USE_CAPTURED_IMAGE_IN_CHAT_VALUE}"
   print_review_item "Startup volume" "${INITIAL_VOLUME_LEVEL_VALUE}/127"
   print_review_item "Chat history limit" "${CHATBOT_MAX_MESSAGES}"
@@ -462,6 +464,7 @@ reset_install_choices() {
   GOOGLE_CLOUD_TTS_LANGUAGE_CODE_VALUE="en-US"
   GOOGLE_CLOUD_TTS_VOICE_NAME_VALUE=""
   GOOGLE_CLOUD_TTS_SSML_GENDER_VALUE="NEUTRAL"
+  THINKING_SOUND_ENABLED_VALUE="false"
   PIPER_VOICE="en_US-lessac-medium"
   CHATBOT_ENV_TEMPLATE="${PROJECT_ROOT}/.env.pi5-local.template"
   CHATBOT_ENV_FILE="${PROJECT_ROOT}/.env"
@@ -850,6 +853,14 @@ prompt_initial_volume_level() {
 
     warn "Please enter a whole number between 0 and 127."
   done
+}
+
+prompt_thinking_sound() {
+  if prompt_yes_no "Enable a soft thinking sound while waiting for the answer" "n"; then
+    THINKING_SOUND_ENABLED_VALUE="true"
+  else
+    THINKING_SOUND_ENABLED_VALUE="false"
+  fi
 }
 
 prompt_required_value() {
@@ -2384,6 +2395,7 @@ while true; do
   pick_asr_model
   pick_tts_voice
   prompt_initial_volume_level
+  prompt_thinking_sound
   pick_assistant_language
   pick_asr_language
   pick_llm_runtime_mode
@@ -2557,6 +2569,7 @@ set_env_value "${CHATBOT_ENV_FILE}" "ANSWER_INTERRUPT_CONSECUTIVE_DETECTIONS" "2
 set_env_value "${CHATBOT_ENV_FILE}" "ANSWER_INTERRUPT_VOICE_LEVEL_BOOST" "6"
 set_env_value "${CHATBOT_ENV_FILE}" "ANSWER_INTERRUPT_SAMPLE_DURATION_SEC" "0.18"
 set_env_value "${CHATBOT_ENV_FILE}" "ENABLE_THINKING" "${ENABLE_THINKING_VALUE}"
+set_env_value "${CHATBOT_ENV_FILE}" "THINKING_SOUND_ENABLED" "${THINKING_SOUND_ENABLED_VALUE}"
 set_env_value "${CHATBOT_ENV_FILE}" "USE_CAPTURED_IMAGE_IN_CHAT" "${USE_CAPTURED_IMAGE_IN_CHAT_VALUE}"
 if [ "${APPLY_PI_MEMORY_TUNING}" = true ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "MALLOC_ARENA_MAX" "${RUNTIME_MALLOC_ARENA_MAX_VALUE}"

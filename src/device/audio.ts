@@ -16,6 +16,16 @@ const soundCardIndex = process.env.SOUND_CARD_INDEX || "1";
 // Use the dmix software mixer so TTS and music playback can coexist.
 // Raw "hw:X,0" is exclusive — only one process can open it at a time.
 const alsaOutputDevice = process.env.ALSA_OUTPUT_DEVICE || "dmixed";
+const thinkingSoundEnabled =
+  (process.env.THINKING_SOUND_ENABLED || "false").toLowerCase() === "true";
+const thinkingSoundIntervalMs = parseInt(
+  process.env.THINKING_SOUND_INTERVAL_MS || "1800",
+  10,
+);
+const thinkingSoundVolume = Math.max(
+  0.001,
+  Math.min(0.08, parseFloat(process.env.THINKING_SOUND_VOLUME || "0.014")),
+);
 const normalizeAudioFormat = (value: string | undefined, fallback: AudioFormat): AudioFormat => {
   const normalized = (value || "").toLowerCase();
   return normalized === "wav" || normalized === "mp3" ? normalized : fallback;
@@ -312,16 +322,133 @@ interface Player {
   process: ChildProcess | null;
 }
 
+interface ThinkingSoundState {
+  timer: NodeJS.Timeout | null;
+  process: ChildProcess | null;
+  generation: number;
+}
+
 const player: Player = {
   isPlaying: false,
   process: null,
+};
+
+const thinkingSound: ThinkingSoundState = {
+  timer: null,
+  process: null,
+  generation: 0,
 };
 
 setTimeout(() => {
   player.process = startPlayerProcess();
 }, 5000);
 
+const playThinkingPulse = (generation: number): void => {
+  if (!thinkingSoundEnabled || generation !== thinkingSound.generation) {
+    return;
+  }
+  if (webAudioBridge.isAvailable() || player.isPlaying || thinkingSound.process) {
+    return;
+  }
+
+  traceEvent("audio", "Playing thinking pulse", {
+    alsaOutputDevice,
+    thinkingSoundVolume,
+  });
+  const primaryVolume = thinkingSoundVolume.toFixed(3);
+  const accentVolume = Math.max(0.001, thinkingSoundVolume * 0.55).toFixed(3);
+  const textureVolume = Math.max(0.001, thinkingSoundVolume * 0.35).toFixed(3);
+  const process = spawn("sox", [
+    "-n",
+    "-t",
+    "alsa",
+    alsaOutputDevice,
+    "synth",
+    "0.035",
+    "trapezium",
+    "660",
+    "vol",
+    primaryVolume,
+    ":",
+    "synth",
+    "0.03",
+    "sine",
+    "880",
+    "vol",
+    accentVolume,
+    ":",
+    "synth",
+    "0.02",
+    "sine",
+    "1320",
+    "vol",
+    textureVolume,
+    "pad",
+    "0",
+    "0.12",
+    "fade",
+    "q",
+    "0.005",
+    "0.18",
+    "0.035",
+    "gain",
+    "-28",
+  ]);
+  thinkingSound.process = process;
+
+  const clearThinkingProcess = () => {
+    if (thinkingSound.process === process) {
+      thinkingSound.process = null;
+    }
+  };
+
+  process.on("error", (err) => {
+    console.error("Thinking pulse error:", err.message);
+    clearThinkingProcess();
+  });
+  process.on("exit", clearThinkingProcess);
+};
+
+const startThinkingSound = (): void => {
+  if (!thinkingSoundEnabled || thinkingSound.timer) {
+    return;
+  }
+
+  thinkingSound.generation += 1;
+  const generation = thinkingSound.generation;
+  traceEvent("audio", "Starting thinking sound loop", {
+    intervalMs: thinkingSoundIntervalMs,
+  });
+  playThinkingPulse(generation);
+  thinkingSound.timer = setInterval(() => {
+    playThinkingPulse(generation);
+  }, thinkingSoundIntervalMs);
+};
+
+const stopThinkingSound = (): void => {
+  const hadTimer = Boolean(thinkingSound.timer);
+  const hadProcess = Boolean(thinkingSound.process);
+  thinkingSound.generation += 1;
+  if (thinkingSound.timer) {
+    clearInterval(thinkingSound.timer);
+    thinkingSound.timer = null;
+  }
+  if (thinkingSound.process) {
+    try {
+      thinkingSound.process.kill();
+    } catch {}
+    thinkingSound.process = null;
+  }
+  if (hadTimer || hadProcess) {
+    traceEvent("audio", "Stopped thinking sound loop", {
+      hadTimer,
+      hadProcess,
+    });
+  }
+};
+
 const playAudioData = (params: TTSResult): Promise<void> => {
+  stopThinkingSound();
   // Delegate to browser speaker when web audio is enabled and a client is connected.
   if (webAudioBridge.isAvailable()) {
     console.log("[WebAudio] Sending audio to browser for playback.");
@@ -442,6 +569,7 @@ const playAudioData = (params: TTSResult): Promise<void> => {
 };
 
 const stopPlaying = (): void => {
+  stopThinkingSound();
   traceEvent("audio", "stopPlaying invoked", {
     isPlaying: player.isPlaying,
     hasProcess: Boolean(player.process),
@@ -471,6 +599,7 @@ const stopPlaying = (): void => {
 // Close audio player when exiting program
 process.on("SIGINT", () => {
   try {
+    stopThinkingSound();
     if (player.process) {
       player.process.stdin?.end();
       player.process.kill();
@@ -532,6 +661,8 @@ export {
   stopRecording,
   playAudioData,
   stopPlaying,
+  startThinkingSound,
+  stopThinkingSound,
   releaseAudioPlayer,
   restoreAudioPlayer,
 };
