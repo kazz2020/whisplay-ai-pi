@@ -42,6 +42,10 @@ export interface ChatFlowContext {
   conversationMessages: Message[];
 
   transitionTo: (flowName: FlowName) => void;
+  startTurnTrace: (source: string, details?: unknown) => void;
+  markTurnTrace: (stage: string, details?: unknown) => void;
+  markTurnTraceOnce: (stage: string, details?: unknown) => void;
+  finishTurnTrace: (status: string, details?: unknown) => void;
   recognizeAudio: (path: string, isFromAutoListening?: boolean) => Promise<string>;
   partialThinkingCallback: (partialThinking: string) => void;
   startWakeSession: () => void;

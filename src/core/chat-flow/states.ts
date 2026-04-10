@@ -163,6 +163,10 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
     onButtonDoubleClick(null);
     ctx.currentRecordFilePath = `${ctx.recordingsDir
       }/user-${Date.now()}.${recordFileFormat}`;
+    ctx.startTurnTrace("button_press", {
+      format: recordFileFormat,
+      wakeSessionActive: ctx.wakeSessionActive,
+    });
     onButtonPressed(noop);
     const listeningStartedAt = Date.now();
     // If button was already released before we entered this state, go back to sleep
@@ -176,10 +180,17 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
       if (Date.now() - listeningStartedAt < 500) {
         // Too short to be meaningful — stop recording and return to sleep
         console.log("[listening] Button released too quickly, returning to sleep");
+        ctx.markTurnTrace("recording_cancelled_short", {
+          heldMs: Date.now() - listeningStartedAt,
+        });
+        ctx.finishTurnTrace("cancelled_short");
         stop();
         ctx.transitionTo("sleep");
         return;
       }
+      ctx.markTurnTrace("recording_stop_requested", {
+        heldMs: Date.now() - listeningStartedAt,
+      });
       stop();
       display({
         RGB: "#ff6800",
@@ -187,12 +198,17 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
       });
     };
     onButtonReleased(handleRelease);
+    ctx.markTurnTrace("recording_started", { mode: "manual" });
     result
       .then(() => {
+        ctx.markTurnTrace("recording_finished", { mode: "manual" });
         ctx.transitionTo("asr");
       })
       .catch((err) => {
         console.error("Error during recording:", err);
+        ctx.finishTurnTrace("recording_error", {
+          message: err instanceof Error ? err.message : String(err),
+        });
         ctx.transitionTo("sleep");
       });
     display({
@@ -221,7 +237,12 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
 
     ctx.currentRecordFilePath = `${ctx.recordingsDir
       }/user-${Date.now()}.${recordFileFormat}`;
+    ctx.startTurnTrace("wake_word", {
+      format: recordFileFormat,
+      remainingIdleMs,
+    });
     onButtonPressed(() => {
+      ctx.finishTurnTrace("button_override");
       ctx.transitionTo("listening");
     });
     onButtonReleased(noop);
@@ -233,12 +254,14 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
       rag_icon_visible: false,
     });
     getDynamicVoiceDetectLevel().then((level) => {
+      ctx.markTurnTrace("voice_level_ready", { level });
       let idleTimeoutHandle: NodeJS.Timeout | null = setTimeout(() => {
         idleTimeoutHandle = null;
         if (ctx.currentFlowName !== "wake_listening") {
           return;
         }
         console.log("[wakeword] Wake session idle timeout reached, returning to sleep");
+        ctx.finishTurnTrace("wake_idle_timeout");
         ctx.endWakeSession();
         stopRecording();
         ctx.transitionTo("sleep");
@@ -258,12 +281,17 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
         text: `(Detect level: ${level}%) Listening...`,
         rag_icon_visible: false,
       });
+      ctx.markTurnTrace("recording_started", {
+        mode: "wake",
+        voiceDetectLevel: level,
+      });
       recordAudio(ctx.currentRecordFilePath, ctx.wakeRecordMaxSec, level)
         .then(() => {
           clearIdleTimeout();
           if (ctx.currentFlowName !== "wake_listening") {
             return;
           }
+          ctx.markTurnTrace("recording_finished", { mode: "wake" });
           ctx.transitionTo("asr");
         })
         .catch((err) => {
@@ -272,6 +300,9 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
             return;
           }
           console.error("Error during auto recording:", err);
+          ctx.finishTurnTrace("recording_error", {
+            message: err instanceof Error ? err.message : String(err),
+          });
           ctx.endWakeSession();
           ctx.transitionTo("sleep");
         });
@@ -293,6 +324,7 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
     ]).then((result) => {
       if (ctx.currentFlowName !== "asr") return;
       if (result === "[UserPress]") {
+        ctx.finishTurnTrace("interrupted_during_asr");
         ctx.transitionTo("listening");
         return;
       }
@@ -307,6 +339,7 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
         ctx.transitionTo("answer");
         return;
       }
+      ctx.finishTurnTrace("no_speech");
       if (ctx.wakeSessionActive) {
         if (ctx.shouldContinueWakeSession()) {
           ctx.transitionTo("wake_listening");
@@ -328,6 +361,9 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
       RGB: "#00c8a3",
     });
     const currentAnswerId = ctx.answerId;
+    ctx.markTurnTrace("answer_started", {
+      inputLength: ctx.asrText.length,
+    });
     const interruptToListening = () => {
       stopThinkingSound();
       ctx.interruptCurrentAnswer();
@@ -384,6 +420,10 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
     [() => Promise.resolve().then(() => ""), getSystemPromptWithKnowledge]
     [enableRAG ? 1 : 0](ctx.asrText)
       .then((res: string) => {
+        ctx.markTurnTrace("knowledge_ready", {
+          hasKnowledge: Boolean(res),
+          knowledgeLength: res.length,
+        });
         let knowledgePrompt = res;
         if (res) {
           console.log("Retrieved knowledge for RAG:\n", res);
@@ -404,6 +444,9 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
           ctx.asrText,
           knowledgePrompt,
         );
+        ctx.markTurnTrace("llm_started", {
+          promptMessages: prompt.length,
+        });
         chatWithLLMStream(
           prompt,
           (text) => {
@@ -411,11 +454,15 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
               return;
             }
             stopThinkingSound();
+            ctx.markTurnTraceOnce("llm_first_token", {
+              chunkLength: text.length,
+            });
             ctx.appendPendingAssistantText(text);
             partial(text);
           },
           () => {
             stopThinkingSound();
+            ctx.markTurnTrace("llm_completed");
             if (currentAnswerId === ctx.answerId) {
               endPartial();
             }
@@ -461,11 +508,19 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
       .catch((err) => {
         stopThinkingSound();
         console.error("Error while preparing answer prompt:", err);
+        ctx.finishTurnTrace("answer_prepare_error", {
+          message: err instanceof Error ? err.message : String(err),
+        });
         ctx.transitionTo("sleep");
       });
     getPlayEndPromise().then(() => {
       stopThinkingSound();
       if (ctx.currentFlowName === "answer" && currentAnswerId === ctx.answerId) {
+        ctx.finishTurnTrace("completed", {
+          enterMusicAfterAnswer: ctx.enterMusicAfterAnswer,
+          wakeSessionActive: ctx.wakeSessionActive,
+          endAfterAnswer: ctx.endAfterAnswer,
+        });
         ctx.commitPendingAssistantResponse();
         clearPendingCapturedImgForChat();
         display({ image_icon_visible: false });

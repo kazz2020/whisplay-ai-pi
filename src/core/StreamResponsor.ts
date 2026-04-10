@@ -8,6 +8,7 @@ dotenv.config();
 type TTSFunc = (text: string) => Promise<TTSResult>;
 type SentencesCallback = (sentences: string[]) => void;
 type TextCallback = (text: string) => void;
+type TelemetryCallback = (event: string, payload?: Record<string, unknown>) => void;
 type SentencePlayCallback = (payload: {
   charEnd: number;
   durationMs: number;
@@ -16,9 +17,11 @@ type SentencePlayCallback = (payload: {
 }) => void;
 
 export class StreamResponser {
+  private static readonly queueDrainPollMs = 120;
   private ttsFunc: TTSFunc;
   private sentencesCallback?: SentencesCallback;
   private textCallback?: TextCallback;
+  private telemetryCallback?: TelemetryCallback;
   private sentencePlayCallback?: SentencePlayCallback;
   private partialContent: string = "";
   private playEndResolve: () => void = () => {};
@@ -37,17 +40,24 @@ export class StreamResponser {
     ttsFunc: TTSFunc,
     sentencesCallback?: SentencesCallback,
     textCallback?: TextCallback,
-    sentencePlayCallback?: SentencePlayCallback
+    sentencePlayCallback?: SentencePlayCallback,
+    telemetryCallback?: TelemetryCallback,
   ) {
     this.ttsFunc = async (text) => {
+      this.telemetryCallback?.("tts_requested", { textLength: text.length });
       console.time("[TTS time]");
       const result = await ttsFunc(text);
       console.timeEnd("[TTS time]");
+      this.telemetryCallback?.("tts_ready", {
+        textLength: text.length,
+        durationMs: result.duration,
+      });
       return result;
     };
     this.sentencesCallback = sentencesCallback;
     this.textCallback = textCallback;
     this.sentencePlayCallback = sentencePlayCallback;
+    this.telemetryCallback = telemetryCallback;
   }
 
   private getCharEndForSentence(sentenceIndex: number): number {
@@ -81,14 +91,26 @@ export class StreamResponser {
             sentenceIndex: item.sentenceIndex,
             sentence: item.sentence,
           });
+          this.telemetryCallback?.("playback_started", {
+            sentenceIndex: item.sentenceIndex,
+            durationMs: playParams.duration,
+            queueIndex: currentIndex,
+          });
           await playAudioData(playParams);
+          this.telemetryCallback?.("playback_finished", {
+            sentenceIndex: item.sentenceIndex,
+            durationMs: playParams.duration,
+            queueIndex: currentIndex,
+          });
         } catch (error) {
           console.error("Audio playback error:", error);
         }
         currentIndex++;
         playNext();
       } else if (this.partialContent) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await new Promise((resolve) =>
+          setTimeout(resolve, StreamResponser.queueDrainPollMs),
+        );
         playNext();
       } else {
         console.log(
@@ -140,6 +162,10 @@ export class StreamResponser {
         if (!purified) {
           return;
         }
+        this.telemetryCallback?.("tts_enqueued", {
+          sentenceIndex: startIndex + index,
+          textLength: purified.length,
+        });
         const ttsPromise = this.enqueueTTS(purified);
         queueItems.push({
           sentenceIndex: startIndex + index,
@@ -170,6 +196,10 @@ export class StreamResponser {
       if (this.partialContent.trim() !== "") {
         const text = purifyTextForTTS(this.partialContent);
         const length = this.speakQueue.length;
+        this.telemetryCallback?.("tts_enqueued", {
+          sentenceIndex: this.displaySentences.length - 1,
+          textLength: text.length,
+        });
         this.speakQueue.push({
           sentenceIndex: this.displaySentences.length - 1,
           sentence: this.displaySentences[this.displaySentences.length - 1],

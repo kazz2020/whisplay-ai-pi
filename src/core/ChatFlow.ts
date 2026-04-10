@@ -23,6 +23,7 @@ import {
 } from "../device/voice-detect";
 import { shouldResetChatHistory } from "../config/llm-config";
 import { Message } from "../type";
+import { createLatencyTrace, LatencyTrace } from "../utils/trace";
 
 dotEnv.config();
 
@@ -434,6 +435,8 @@ class ChatFlow implements ChatFlowContext {
   pendingAssistantText: string = "";
   activeUserMessageIndex: number = -1;
   mergeNextInterruptIntoActiveUser: boolean = false;
+  currentTurnTrace: LatencyTrace | null = null;
+  currentTurnTraceMarks: Set<string> = new Set();
 
   constructor(options: { enableCamera?: boolean } = {}) {
     console.log(`[${getCurrentTimeTag()}] ChatBot started.`);
@@ -475,7 +478,28 @@ class ChatFlow implements ChatFlowContext {
             duration_ms: durationMs,
           },
         });
-      }
+      },
+      (event, payload) => {
+        if (event === "tts_enqueued") {
+          this.markTurnTraceOnce("tts_enqueued", payload);
+          return;
+        }
+        if (event === "tts_requested") {
+          this.markTurnTraceOnce("tts_requested", payload);
+          return;
+        }
+        if (event === "tts_ready") {
+          this.markTurnTraceOnce("tts_ready", payload);
+          return;
+        }
+        if (event === "playback_started") {
+          this.markTurnTraceOnce("playback_started", payload);
+          return;
+        }
+        if (event === "playback_finished") {
+          this.markTurnTraceOnce("playback_finished", payload);
+        }
+      },
     );
     if (options?.enableCamera) {
       this.enableCamera = true;
@@ -551,13 +575,22 @@ class ChatFlow implements ChatFlowContext {
   }
 
   async recognizeAudio(path: string, isFromAutoListening?: boolean): Promise<string> {
-    if (!isFromAutoListening && (await getRecordFileDurationMs(path)) < 500) {
+    const recordDurationMs = await getRecordFileDurationMs(path);
+    if (!isFromAutoListening && recordDurationMs < 500) {
       console.log("Record audio too short, skipping recognition.");
+      this.markTurnTrace("asr_skipped_short", { recordDurationMs });
       return Promise.resolve("");
     }
+    this.markTurnTrace("asr_started", {
+      recordDurationMs,
+      isFromAutoListening: Boolean(isFromAutoListening),
+    });
     console.time(`[ASR time]`);
     const result = await recognizeAudio(path);
     console.timeEnd(`[ASR time]`);
+    this.markTurnTrace("asr_completed", {
+      textLength: result.trim().length,
+    });
     return result;
   }
 
@@ -587,6 +620,34 @@ class ChatFlow implements ChatFlowContext {
     }
     console.log(`[${getCurrentTimeTag()}] switch to:`, flowName);
     this.stateMachine.transitionTo(flowName);
+  };
+
+  startTurnTrace = (source: string, details?: unknown): void => {
+    this.currentTurnTrace?.finish("replaced", { replacedBy: source });
+    this.currentTurnTrace = createLatencyTrace("assistant", `turn-${this.answerId}`, {
+      source,
+      details,
+    });
+    this.currentTurnTraceMarks.clear();
+    this.currentTurnTrace.mark("turn_started", { source });
+  };
+
+  markTurnTrace = (stage: string, details?: unknown): void => {
+    this.currentTurnTrace?.mark(stage, details);
+  };
+
+  markTurnTraceOnce = (stage: string, details?: unknown): void => {
+    if (!this.currentTurnTrace || this.currentTurnTraceMarks.has(stage)) {
+      return;
+    }
+    this.currentTurnTraceMarks.add(stage);
+    this.currentTurnTrace.mark(stage, details);
+  };
+
+  finishTurnTrace = (status: string, details?: unknown): void => {
+    this.currentTurnTrace?.finish(status, details);
+    this.currentTurnTrace = null;
+    this.currentTurnTraceMarks.clear();
   };
 
   isAnswerFlow = (): boolean => {
@@ -666,6 +727,7 @@ class ChatFlow implements ChatFlowContext {
       this.mergeNextInterruptIntoActiveUser = true;
     }
     this.clearPendingAssistantResponse();
+    this.finishTurnTrace("interrupted");
     resetChatHistory();
     this.streamResponser.stop();
   };
