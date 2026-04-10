@@ -96,6 +96,7 @@ SHERPA_ONNX_TTS_NUM_THREADS_VALUE="2"
 SHERPA_ONNX_TTS_PROVIDER_VALUE="cpu"
 SHERPA_ONNX_TTS_SPEAKER_ID_VALUE="0"
 SHERPA_ONNX_TTS_SPEED_VALUE="1.0"
+INITIAL_VOLUME_LEVEL_VALUE="114"
 DOWNLOAD_SHERPA_ONNX_TTS_MODEL=true
 INSTALL_LITERT_LM=false
 DOWNLOAD_LITERT_LM_MODEL=false
@@ -271,6 +272,7 @@ print_final_review() {
   fi
   print_review_item "Thinking mode" "${ENABLE_THINKING_VALUE}"
   print_review_item "Use camera in chat" "${USE_CAPTURED_IMAGE_IN_CHAT_VALUE}"
+  print_review_item "Startup volume" "${INITIAL_VOLUME_LEVEL_VALUE}/127"
   print_review_item "Chat history limit" "${CHATBOT_MAX_MESSAGES}"
 
   print_subsection "Memory"
@@ -803,6 +805,20 @@ prompt_value() {
   local reply
   read -r -p "${COLOR_BOLD}${prompt}${COLOR_RESET} ${COLOR_DIM}[${default_value}]${COLOR_RESET} -> " reply
   printf '%s\n' "${reply:-$default_value}"
+}
+
+prompt_initial_volume_level() {
+  local reply
+
+  while true; do
+    reply=$(prompt_value "Initial speaker volume (0-127, 127 is loudest)" "${INITIAL_VOLUME_LEVEL_VALUE}")
+    if [[ "${reply}" =~ ^[0-9]+$ ]] && [ "${reply}" -ge 0 ] && [ "${reply}" -le 127 ]; then
+      INITIAL_VOLUME_LEVEL_VALUE="${reply}"
+      return 0
+    fi
+
+    warn "Please enter a whole number between 0 and 127."
+  done
 }
 
 prompt_required_value() {
@@ -2257,6 +2273,7 @@ while true; do
 
   pick_asr_model
   pick_tts_voice
+  prompt_initial_volume_level
   pick_assistant_language
   pick_asr_language
   pick_llm_runtime_mode
@@ -2401,6 +2418,7 @@ else
   set_env_value "${CHATBOT_ENV_FILE}" "SHERPA_ONNX_TTS_SPEAKER_ID" "${SHERPA_ONNX_TTS_SPEAKER_ID_VALUE}"
   set_env_value "${CHATBOT_ENV_FILE}" "SHERPA_ONNX_TTS_SPEED" "${SHERPA_ONNX_TTS_SPEED_VALUE}"
 fi
+set_env_value "${CHATBOT_ENV_FILE}" "INITIAL_VOLUME_LEVEL" "${INITIAL_VOLUME_LEVEL_VALUE}"
 set_env_value "${CHATBOT_ENV_FILE}" "SYSTEM_PROMPT" "${ASSISTANT_SYSTEM_PROMPT}"
 set_env_value "${CHATBOT_ENV_FILE}" "ANSWER_INTERRUPT_WITH_VOICE" "true"
 set_env_value "${CHATBOT_ENV_FILE}" "ANSWER_INTERRUPT_GRACE_MS" "1200"
