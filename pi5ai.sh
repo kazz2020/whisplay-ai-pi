@@ -11,6 +11,8 @@ DEFAULT_PIPER_DIR="${HOME}/piper"
 DEFAULT_SHERPA_ONNX_TTS_DIR="${HOME}/sherpa-onnx-tts"
 DEFAULT_LITERT_LM_MODEL_DIR="${HOME}/litert-lm-models"
 DRIVER_REBOOT_RECOMMENDED=false
+ASR_SERVER_SELECTION="faster-whisper"
+ASR_PROFILE_LABEL="Faster Whisper"
 ASR_LANGUAGE="en"
 ASR_LANGUAGE_LABEL="English"
 ASSISTANT_LANGUAGE_LABEL="English"
@@ -38,6 +40,13 @@ OPENAI_API_BASE_URL_VALUE="https://api.deepseek.com/v1"
 OPENAI_API_KEY_VALUE=""
 OPENAI_LLM_MODEL_VALUE="deepseek-chat"
 OPENAI_ENABLE_TOOLS_VALUE="false"
+GEMINI_API_KEY_VALUE=""
+GEMINI_MODEL_VALUE="gemini-2.5-flash"
+GOOGLE_APPLICATION_CREDENTIALS_VALUE=""
+GOOGLE_CLOUD_ASR_MODEL_VALUE=""
+GOOGLE_CLOUD_TTS_LANGUAGE_CODE_VALUE="en-US"
+GOOGLE_CLOUD_TTS_VOICE_NAME_VALUE=""
+GOOGLE_CLOUD_TTS_SSML_GENDER_VALUE="NEUTRAL"
 ENABLE_THINKING_VALUE="false"
 USE_CAPTURED_IMAGE_IN_CHAT_VALUE="false"
 LLAMA_CPP_HF_TOKEN_VALUE="${HF_TOKEN:-}"
@@ -257,13 +266,23 @@ print_final_review() {
   fi
 
   print_subsection "Speech and conversation"
+  print_review_item "ASR backend" "${ASR_PROFILE_LABEL}"
   print_review_item "ASR model" "${ASR_MODEL}"
   print_review_item "Assistant language" "${ASSISTANT_LANGUAGE_LABEL}"
   print_review_item "ASR language" "${ASR_LANGUAGE}"
+  if [ "${ASR_SERVER_SELECTION}" = "gemini" ]; then
+    print_review_item "Gemini API key" "$(mask_secret "${GEMINI_API_KEY_VALUE}")"
+  elif [ "${ASR_SERVER_SELECTION}" = "google-cloud" ]; then
+    print_review_item "Google creds" "${GOOGLE_APPLICATION_CREDENTIALS_VALUE}"
+  fi
   print_review_item "TTS backend" "${TTS_PROFILE_LABEL}"
   if [ "${TTS_SERVER_SELECTION}" = "piper-http" ]; then
     print_review_item "Piper voice" "${PIPER_VOICE}"
     print_review_item "Piper dir" "${PIPER_DIR}"
+  elif [ "${TTS_SERVER_SELECTION}" = "google-cloud" ]; then
+    print_review_item "Google TTS lang" "${GOOGLE_CLOUD_TTS_LANGUAGE_CODE_VALUE}"
+    print_review_item "Google TTS voice" "${GOOGLE_CLOUD_TTS_VOICE_NAME_VALUE:-auto}"
+    print_review_item "Google TTS gender" "${GOOGLE_CLOUD_TTS_SSML_GENDER_VALUE}"
   else
     print_review_item "Sherpa model" "${SHERPA_ONNX_TTS_MODEL_LABEL}"
     print_review_item "Sherpa dir" "${SHERPA_ONNX_TTS_DIR}"
@@ -433,7 +452,16 @@ reset_install_choices() {
   BRAIN_MAX_MESSAGES_DEFAULT="12"
   LLAMA_HF_REPO="bartowski/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M"
   LLAMA_ALIAS="qwen2.5-1.5b-instruct"
+  ASR_SERVER_SELECTION="faster-whisper"
+  ASR_PROFILE_LABEL="Faster Whisper"
   ASR_MODEL="tiny"
+  GEMINI_API_KEY_VALUE=""
+  GEMINI_MODEL_VALUE="gemini-2.5-flash"
+  GOOGLE_APPLICATION_CREDENTIALS_VALUE=""
+  GOOGLE_CLOUD_ASR_MODEL_VALUE=""
+  GOOGLE_CLOUD_TTS_LANGUAGE_CODE_VALUE="en-US"
+  GOOGLE_CLOUD_TTS_VOICE_NAME_VALUE=""
+  GOOGLE_CLOUD_TTS_SSML_GENDER_VALUE="NEUTRAL"
   PIPER_VOICE="en_US-lessac-medium"
   CHATBOT_ENV_TEMPLATE="${PROJECT_ROOT}/.env.pi5-local.template"
   CHATBOT_ENV_FILE="${PROJECT_ROOT}/.env"
@@ -836,6 +864,27 @@ prompt_required_value() {
 
     warn "A value is required for this option."
   done
+}
+
+ensure_google_cloud_credentials_path() {
+  if [ -n "${GOOGLE_APPLICATION_CREDENTIALS_VALUE:-}" ]; then
+    return 0
+  fi
+
+  GOOGLE_APPLICATION_CREDENTIALS_VALUE=$(prompt_required_value "Enter Google Cloud service-account JSON path")
+  if [ ! -f "${GOOGLE_APPLICATION_CREDENTIALS_VALUE}" ]; then
+    warn "Credentials file not found yet: ${GOOGLE_APPLICATION_CREDENTIALS_VALUE}"
+    warn "The path will still be written to .env. Copy the JSON file to that path on the Pi before running the assistant."
+  fi
+}
+
+map_google_cloud_language_code() {
+  case "$1" in
+    pl) printf 'pl-PL' ;;
+    de) printf 'de-DE' ;;
+    en|"") printf 'en-US' ;;
+    *) printf '%s' "$1" ;;
+  esac
 }
 
 pick_llama_hf_auth() {
@@ -1848,18 +1897,53 @@ pick_llm_runtime_mode() {
 }
 
 pick_asr_model() {
-  local choice
-  choice=$(choose_from_menu \
-    "Select the faster-whisper ASR model" \
+  local backend_choice model_choice
+
+  backend_choice=$(choose_from_menu \
+    "Select the speech recognition backend" \
     "1" \
-    "1|tiny (fastest, recommended)" \
-    "2|base" \
-    "3|custom local path")
-  case "${choice}" in
-    1) ASR_MODEL="tiny" ;;
-    2) ASR_MODEL="base" ;;
-    3) ASR_MODEL=$(prompt_value "Enter faster-whisper model name or local directory" "tiny") ;;
-    *) die "Invalid ASR choice" ;;
+    "1|Faster Whisper on the Raspberry Pi (local/offline)" \
+    "2|Google Cloud Speech-to-Text (service-account JSON)" \
+    "3|Google Gemini ASR (cloud)")
+
+  case "${backend_choice}" in
+    1)
+      ASR_SERVER_SELECTION="faster-whisper"
+      ASR_PROFILE_LABEL="Faster Whisper"
+      model_choice=$(choose_from_menu \
+        "Select the faster-whisper ASR model" \
+        "1" \
+        "1|tiny (fastest, recommended)" \
+        "2|base" \
+        "3|custom local path")
+      case "${model_choice}" in
+        1) ASR_MODEL="tiny" ;;
+        2) ASR_MODEL="base" ;;
+        3) ASR_MODEL=$(prompt_value "Enter faster-whisper model name or local directory" "tiny") ;;
+        *) die "Invalid ASR choice" ;;
+      esac
+      ;;
+    2)
+      ASR_SERVER_SELECTION="google-cloud"
+      ASR_PROFILE_LABEL="Google Cloud Speech-to-Text"
+      ensure_google_cloud_credentials_path
+      GOOGLE_CLOUD_ASR_MODEL_VALUE=$(prompt_value "Optional Google Cloud ASR model (blank uses provider default)" "${GOOGLE_CLOUD_ASR_MODEL_VALUE}")
+      ASR_MODEL="${GOOGLE_CLOUD_ASR_MODEL_VALUE:-default}"
+      INSTALL_LOCAL_ASR=false
+      DOWNLOAD_ASR_MODEL=false
+      print_note "Google Cloud Speech-to-Text uses your service-account JSON. Local faster-whisper install and pre-download are disabled for this setup."
+      ;;
+    3)
+      ASR_SERVER_SELECTION="gemini"
+      ASR_PROFILE_LABEL="Google Gemini ASR"
+      GEMINI_API_KEY_VALUE=$(prompt_required_value "Enter Gemini API key")
+      GEMINI_MODEL_VALUE=$(prompt_value "Enter Gemini ASR model" "${GEMINI_MODEL_VALUE}")
+      ASR_MODEL="${GEMINI_MODEL_VALUE}"
+      INSTALL_LOCAL_ASR=false
+      DOWNLOAD_ASR_MODEL=false
+      print_note "Gemini ASR uses the online Gemini API. Local faster-whisper install and pre-download are disabled for this setup."
+      ;;
+    *) die "Invalid ASR backend choice" ;;
   esac
 }
 
@@ -1954,10 +2038,11 @@ pick_tts_voice() {
   local backend_choice voice_choice
 
   backend_choice=$(choose_from_menu \
-    "Select the local TTS backend" \
+    "Select the TTS backend" \
     "1" \
     "1|Piper HTTP (recommended, simplest)" \
-    "2|Sherpa ONNX (offline comparison option on the Pi)")
+    "2|Sherpa ONNX (offline comparison option on the Pi)" \
+    "3|Google Cloud Text-to-Speech (service-account JSON)")
 
   case "${backend_choice}" in
     1)
@@ -2016,6 +2101,28 @@ pick_tts_voice() {
       else
         DOWNLOAD_SHERPA_ONNX_TTS_MODEL=false
       fi
+      ;;
+    3)
+      TTS_SERVER_SELECTION="google-cloud"
+      TTS_PROFILE_LABEL="Google Cloud TTS"
+      ensure_google_cloud_credentials_path
+      GOOGLE_CLOUD_TTS_LANGUAGE_CODE_VALUE=$(prompt_value "Enter Google Cloud TTS language code" "${GOOGLE_CLOUD_TTS_LANGUAGE_CODE_VALUE}")
+      GOOGLE_CLOUD_TTS_VOICE_NAME_VALUE=$(prompt_value "Optional Google Cloud TTS voice name (blank uses auto voice)" "${GOOGLE_CLOUD_TTS_VOICE_NAME_VALUE}")
+      voice_choice=$(choose_from_menu \
+        "Select Google Cloud TTS voice gender" \
+        "3" \
+        "1|Male" \
+        "2|Female" \
+        "3|Neutral")
+      case "${voice_choice}" in
+        1) GOOGLE_CLOUD_TTS_SSML_GENDER_VALUE="MALE" ;;
+        2) GOOGLE_CLOUD_TTS_SSML_GENDER_VALUE="FEMALE" ;;
+        3) GOOGLE_CLOUD_TTS_SSML_GENDER_VALUE="NEUTRAL" ;;
+        *) die "Invalid Google Cloud TTS gender choice" ;;
+      esac
+      INSTALL_LOCAL_TTS=false
+      DOWNLOAD_SHERPA_ONNX_TTS_MODEL=false
+      print_note "Google Cloud TTS uses your service-account JSON. Local Piper/Sherpa install is disabled for this setup."
       ;;
     *) die "Invalid TTS backend choice" ;;
   esac
@@ -2314,7 +2421,7 @@ while true; do
   LLAMA_DIR="${PREFERRED_LLAMA_DIR}"
   if [ "${TTS_SERVER_SELECTION}" = "piper-http" ]; then
     PIPER_DIR=$(prompt_value "Piper model directory" "${DEFAULT_PIPER_DIR}")
-  else
+  elif [ "${TTS_SERVER_SELECTION}" = "sherpa-onnx" ]; then
     SHERPA_ONNX_TTS_DIR=$(prompt_value "Sherpa ONNX model directory" "${DEFAULT_SHERPA_ONNX_TTS_DIR}")
   fi
 
@@ -2368,7 +2475,7 @@ if [ -f "${CHATBOT_ENV_FILE}" ]; then
 fi
 
 cp "${CHATBOT_ENV_TEMPLATE}" "${CHATBOT_ENV_FILE}"
-set_env_value "${CHATBOT_ENV_FILE}" "ASR_SERVER" "faster-whisper"
+set_env_value "${CHATBOT_ENV_FILE}" "ASR_SERVER" "${ASR_SERVER_SELECTION}"
 set_env_value "${CHATBOT_ENV_FILE}" "LLM_SERVER" "${LLM_SERVER_SELECTION}"
 set_env_value "${CHATBOT_ENV_FILE}" "TTS_SERVER" "${TTS_SERVER_SELECTION}"
 set_env_value "${CHATBOT_ENV_FILE}" "SERVE_LLAMA_CPP" "${SERVE_LLAMA_CPP_VALUE}"
@@ -2406,13 +2513,25 @@ if [ "${LLM_SERVER_SELECTION}" = "litert-lm" ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "LITERT_LM_MAX_MESSAGES_LENGTH" "${CHATBOT_MAX_MESSAGES}"
 fi
 
-set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_MODEL_SIZE_OR_PATH" "${ASR_MODEL}"
-set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_LANGUAGE" "${ASR_LANGUAGE}"
+if [ "${ASR_SERVER_SELECTION}" = "faster-whisper" ]; then
+  set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_MODEL_SIZE_OR_PATH" "${ASR_MODEL}"
+  set_env_value "${CHATBOT_ENV_FILE}" "FASTER_WHISPER_LANGUAGE" "${ASR_LANGUAGE}"
+elif [ "${ASR_SERVER_SELECTION}" = "google-cloud" ]; then
+  set_env_value "${CHATBOT_ENV_FILE}" "GOOGLE_APPLICATION_CREDENTIALS" "${GOOGLE_APPLICATION_CREDENTIALS_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "GOOGLE_CLOUD_CREDENTIALS_PATH" "${GOOGLE_APPLICATION_CREDENTIALS_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "GOOGLE_CLOUD_ASR_LANGUAGE_CODE" "$(map_google_cloud_language_code "${ASR_LANGUAGE}")"
+  if [ -n "${GOOGLE_CLOUD_ASR_MODEL_VALUE}" ]; then
+    set_env_value "${CHATBOT_ENV_FILE}" "GOOGLE_CLOUD_ASR_MODEL" "${GOOGLE_CLOUD_ASR_MODEL_VALUE}"
+  fi
+elif [ "${ASR_SERVER_SELECTION}" = "gemini" ]; then
+  set_env_value "${CHATBOT_ENV_FILE}" "GEMINI_API_KEY" "${GEMINI_API_KEY_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "GEMINI_MODEL" "${GEMINI_MODEL_VALUE}"
+fi
 if [ "${TTS_SERVER_SELECTION}" = "piper-http" ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "PIPER_HTTP_HOST" "localhost"
   set_env_value "${CHATBOT_ENV_FILE}" "PIPER_HTTP_PORT" "8805"
   set_env_value "${CHATBOT_ENV_FILE}" "PIPER_HTTP_MODEL" "${PIPER_DIR}/${PIPER_VOICE}"
-else
+elif [ "${TTS_SERVER_SELECTION}" = "sherpa-onnx" ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "SHERPA_ONNX_TTS_HOST" "${SHERPA_ONNX_TTS_HOST_VALUE}"
   set_env_value "${CHATBOT_ENV_FILE}" "SHERPA_ONNX_TTS_PORT" "${SHERPA_ONNX_TTS_PORT_VALUE}"
   set_env_value "${CHATBOT_ENV_FILE}" "SHERPA_ONNX_TTS_MODEL_DIR" "${SHERPA_ONNX_TTS_DIR}/${SHERPA_ONNX_TTS_MODEL_PACKAGE}"
@@ -2420,6 +2539,14 @@ else
   set_env_value "${CHATBOT_ENV_FILE}" "SHERPA_ONNX_TTS_PROVIDER" "${SHERPA_ONNX_TTS_PROVIDER_VALUE}"
   set_env_value "${CHATBOT_ENV_FILE}" "SHERPA_ONNX_TTS_SPEAKER_ID" "${SHERPA_ONNX_TTS_SPEAKER_ID_VALUE}"
   set_env_value "${CHATBOT_ENV_FILE}" "SHERPA_ONNX_TTS_SPEED" "${SHERPA_ONNX_TTS_SPEED_VALUE}"
+elif [ "${TTS_SERVER_SELECTION}" = "google-cloud" ]; then
+  set_env_value "${CHATBOT_ENV_FILE}" "GOOGLE_APPLICATION_CREDENTIALS" "${GOOGLE_APPLICATION_CREDENTIALS_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "GOOGLE_CLOUD_CREDENTIALS_PATH" "${GOOGLE_APPLICATION_CREDENTIALS_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "GOOGLE_CLOUD_TTS_LANGUAGE_CODE" "${GOOGLE_CLOUD_TTS_LANGUAGE_CODE_VALUE}"
+  set_env_value "${CHATBOT_ENV_FILE}" "GOOGLE_CLOUD_TTS_SSML_GENDER" "${GOOGLE_CLOUD_TTS_SSML_GENDER_VALUE}"
+  if [ -n "${GOOGLE_CLOUD_TTS_VOICE_NAME_VALUE}" ]; then
+    set_env_value "${CHATBOT_ENV_FILE}" "GOOGLE_CLOUD_TTS_VOICE_NAME" "${GOOGLE_CLOUD_TTS_VOICE_NAME_VALUE}"
+  fi
 fi
 set_env_value "${CHATBOT_ENV_FILE}" "INITIAL_VOLUME_LEVEL" "${INITIAL_VOLUME_LEVEL_VALUE}"
 set_env_value "${CHATBOT_ENV_FILE}" "SYSTEM_PROMPT" "${ASSISTANT_SYSTEM_PROMPT}"

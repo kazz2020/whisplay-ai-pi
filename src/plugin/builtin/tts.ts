@@ -55,6 +55,19 @@ export function registerTTSPlugins(): void {
   } as TTSPlugin);
 
   pluginRegistry.register({
+    name: "google-cloud",
+    displayName: "Google Cloud TTS",
+    version: "1.0.0",
+    type: "tts",
+    audioFormat: "wav",
+    description: "Google Cloud Text-to-Speech using service-account credentials",
+    activate: () => {
+      const ttsProcessor = require("../../cloud-api/google-cloud/google-cloud-tts").default;
+      return { ttsProcessor };
+    },
+  } as TTSPlugin);
+
+  pluginRegistry.register({
     name: "piper",
     displayName: "Piper TTS",
     version: "1.0.0",

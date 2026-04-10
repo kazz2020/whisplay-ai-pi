@@ -55,6 +55,19 @@ export function registerASRPlugins(): void {
   } as ASRPlugin);
 
   pluginRegistry.register({
+    name: "google-cloud",
+    displayName: "Google Cloud Speech-to-Text",
+    version: "1.0.0",
+    type: "asr",
+    audioFormat: "wav",
+    description: "Google Cloud Speech-to-Text using service-account credentials",
+    activate: () => {
+      const { recognizeAudio } = require("../../cloud-api/google-cloud/google-cloud-asr");
+      return { recognizeAudio };
+    },
+  } as ASRPlugin);
+
+  pluginRegistry.register({
     name: "vosk",
     displayName: "Vosk ASR",
     version: "1.0.0",

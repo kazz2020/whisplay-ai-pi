@@ -7,9 +7,9 @@
 Whisplay AI Chatbot is a pocket-sized AI chatbot device built for Raspberry Pi Zero 2W / Pi 5. It features voice interaction (press button, speak, get spoken responses), an LCD display with emoji/status visualization, RGB LED indicators, and extensible AI backend support.
 
 **Key Capabilities:**
-- Multi-provider ASR (Automatic Speech Recognition): Tencent, Volcengine, OpenAI, Gemini, Whisper, Vosk, local models
+- Multi-provider ASR (Automatic Speech Recognition): Tencent, Volcengine, OpenAI, Gemini, Google Cloud Speech-to-Text, Whisper, Vosk, local models
 - Multi-provider LLM: OpenAI, Gemini, Claude, Ollama, Qwen, Volcengine Doubao, and more
-- Multi-provider TTS: Google, Volcengine, Piper, espeak-ng, local models
+- Multi-provider TTS: Google Gemini, Google Cloud Text-to-Speech, Volcengine, Piper, espeak-ng, local models
 - Image generation and vision understanding
 - RAG (Retrieval-Augmented Generation) with Qdrant vector database
 - Wake word detection for hands-free operation
@@ -30,7 +30,7 @@ Whisplay AI Chatbot is a pocket-sized AI chatbot device built for Raspberry Pi Z
 ### Key Dependencies
 - **Web Framework**: Koa.js (HTTP server)
 - **WebSocket**: ws (real-time communication)
-- **AI SDKs**: @anthropic-ai/sdk, openai, @google/genai
+- **AI SDKs**: @anthropic-ai/sdk, openai, @google/genai, @google-cloud/speech, @google-cloud/text-to-speech
 - **Vector DB**: @qdrant/js-client-rest
 - **Hardware**: spidev, onnxruntime-node
 - **Audio**: get-audio-duration, mp3-duration
@@ -56,6 +56,7 @@ whisplay-ai-chatbot/
 │   │   ├── type.d.ts             # Shared type definitions
 │   │   ├── openai/               # OpenAI ASR/LLM/TTS/Vision
 │   │   ├── gemini/               # Google Gemini services
+│   │   ├── google-cloud/         # Google Cloud Speech/TTS via service-account JSON
 │   │   ├── volcengine/           # ByteDance VolcEngine
 │   │   ├── tencent/              # Tencent Cloud
 │   │   ├── local/                # Local/offline providers
