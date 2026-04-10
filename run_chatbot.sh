@@ -253,6 +253,9 @@ export MALLOC_TRIM_THRESHOLD_
 
 # Adjust initial volume (Linux only)
 if [ "$audio_supported" = true ]; then
+  if [ "$initial_volume_level" -gt 121 ]; then
+    echo "Warning: INITIAL_VOLUME_LEVEL=$initial_volume_level is above the recommended Whisplay HAT range (<=121). Audio may clip or become unstable."
+  fi
   amixer -c $card_index set Speaker $initial_volume_level
 fi
 

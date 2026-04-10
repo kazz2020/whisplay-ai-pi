@@ -811,9 +811,12 @@ prompt_initial_volume_level() {
   local reply
 
   while true; do
-    reply=$(prompt_value "Initial speaker volume (0-127, 127 is loudest)" "${INITIAL_VOLUME_LEVEL_VALUE}")
+    reply=$(prompt_value "Initial speaker volume (0-127, recommended <=121 on Whisplay HAT)" "${INITIAL_VOLUME_LEVEL_VALUE}")
     if [[ "${reply}" =~ ^[0-9]+$ ]] && [ "${reply}" -ge 0 ] && [ "${reply}" -le 127 ]; then
       INITIAL_VOLUME_LEVEL_VALUE="${reply}"
+      if [ "${reply}" -gt 121 ]; then
+        print_note "Values above 121 can clip badly on the Whisplay HAT and may make the device unstable during playback."
+      fi
       return 0
     fi
 
