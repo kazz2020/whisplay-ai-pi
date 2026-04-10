@@ -15,6 +15,7 @@ import {
   recordAudioManually,
   recordFileFormat,
   getDynamicVoiceDetectLevel,
+  stopRecording,
 } from "../../device/audio";
 import { chatWithLLMStream } from "../../cloud-api/server";
 import { isImMode } from "../../cloud-api/llm";
@@ -205,6 +206,17 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
     ctx.musicDisplayText = "";
     ctx.isFromWakeListening = true;
     ctx.answerId += 1;
+    const idleDeadline =
+      (ctx.wakeSessionLastSpeechAt || ctx.wakeSessionStartAt || Date.now()) +
+      ctx.wakeSessionIdleTimeoutMs;
+    const remainingIdleMs = idleDeadline - Date.now();
+
+    if (remainingIdleMs <= 0) {
+      ctx.endWakeSession();
+      ctx.transitionTo("sleep");
+      return;
+    }
+
     ctx.currentRecordFilePath = `${ctx.recordingsDir
       }/user-${Date.now()}.${recordFileFormat}`;
     onButtonPressed(() => {
@@ -219,6 +231,24 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
       rag_icon_visible: false,
     });
     getDynamicVoiceDetectLevel().then((level) => {
+      let idleTimeoutHandle: NodeJS.Timeout | null = setTimeout(() => {
+        idleTimeoutHandle = null;
+        if (ctx.currentFlowName !== "wake_listening") {
+          return;
+        }
+        console.log("[wakeword] Wake session idle timeout reached, returning to sleep");
+        ctx.endWakeSession();
+        stopRecording();
+        ctx.transitionTo("sleep");
+      }, remainingIdleMs);
+
+      const clearIdleTimeout = () => {
+        if (idleTimeoutHandle) {
+          clearTimeout(idleTimeoutHandle);
+          idleTimeoutHandle = null;
+        }
+      };
+
       display({
         status: "listening",
         emoji: DEFAULT_EMOJI,
@@ -228,9 +258,17 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
       });
       recordAudio(ctx.currentRecordFilePath, ctx.wakeRecordMaxSec, level)
         .then(() => {
+          clearIdleTimeout();
+          if (ctx.currentFlowName !== "wake_listening") {
+            return;
+          }
           ctx.transitionTo("asr");
         })
         .catch((err) => {
+          clearIdleTimeout();
+          if (ctx.currentFlowName !== "wake_listening") {
+            return;
+          }
           console.error("Error during auto recording:", err);
           ctx.endWakeSession();
           ctx.transitionTo("sleep");
