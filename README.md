@@ -127,7 +127,7 @@ To re-record local wake phrase samples later, run:
 bash scripts/setup_local_wakeword.sh
 ```
 
-The Pi 5 installer now also includes an `Ollama Cloud` brain option. If you choose it, the installer prompts for `OLLAMA_API_KEY` and writes the cloud model settings into `.env` automatically.
+The Pi 5 installer now also includes an `Ollama Cloud` brain option. If you choose it, the installer prompts for `OLLAMA_API_KEY` and lets you pick a curated cloud model such as `gemma3:27b-cloud`, `gemma4:26b-cloud`, `qwen3.5:27b-cloud`, or `glm-5.1:cloud`, then writes the cloud model settings into `.env` automatically.
 
 The installer also now includes a `LiteRT-LM` brain option as a second local method. If you choose it, the installer can install the `litert-lm` Python runtime, download a LiteRT model from Hugging Face, and write the matching `LITERT_LM_*` settings into `.env`.
 
@@ -165,12 +165,12 @@ The script reads your current `.env`, shows a numbered menu of models from the c
 
 If you want the Pi 5 device experience but do not want to run the LLM locally, you can use Ollama Cloud with the built-in Ollama provider. This keeps ASR, TTS, button handling, display, and device control on the Pi, while the text generation runs remotely.
 
-Example `.env` settings for Google Gemma 3 27B Cloud:
+Example `.env` settings for GLM 5.1 Cloud:
 
 ```bash
 LLM_SERVER=ollama-cloud
 OLLAMA_ENDPOINT=https://ollama.com
-OLLAMA_MODEL=gemma3:27b-cloud
+OLLAMA_MODEL=glm-5.1:cloud
 OLLAMA_API_KEY=your_ollama_api_key
 ```
 
@@ -179,13 +179,13 @@ Notes:
 - The code calls the standard Ollama API path (`/api/chat`, `/api/generate`), so cloud usage relies on the same Ollama-compatible protocol as local Ollama.
 - This is a good fit for Raspberry Pi 5 because the Pi does not need enough RAM or GPU to host a 27B model locally.
 - End-to-end latency will depend on Wi-Fi quality and Ollama Cloud response time, so it will feel less instant than a small local model.
-- If you want vision through Ollama too, set `VISION_SERVER=ollama` and optionally `OLLAMA_VISION_MODEL=gemma3:27b-cloud` if that model path is enabled for your account.
+- If you want vision through Ollama too, set `VISION_SERVER=ollama` and optionally `OLLAMA_VISION_MODEL=glm-5.1:cloud` if that model path is enabled for your account.
 
 For Polish voice use on a Pi 5 8GB, the practical sweet spot is:
 
 - `FASTER_WHISPER_LANGUAGE=pl`
 - `FASTER_WHISPER_MODEL_SIZE_OR_PATH=base` for the best speed or `small` for higher recognition quality
-- `LLM_SERVER=ollama-cloud` with `OLLAMA_MODEL=gemma3:27b-cloud`
+- `LLM_SERVER=ollama-cloud` with `OLLAMA_MODEL=glm-5.1:cloud`
 - `ENABLE_THINKING=false` and `USE_CAPTURED_IMAGE_IN_CHAT=false` to keep latency and RAM usage down
 - short chat history so each request stays small
 
@@ -197,7 +197,7 @@ The project includes built-in RAG support. The recommended setup for Raspberry P
 
 - Qdrant as the vector database
 - Ollama embeddings with a lightweight embedding model such as `nomic-embed-text`
-- your main answer model kept separate from embeddings, for example `gemma3:27b-cloud` for final responses
+- your main answer model kept separate from embeddings, for example `glm-5.1:cloud` for final responses
 
 Recommended flow:
 

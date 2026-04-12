@@ -180,6 +180,7 @@ PY
 
 print_presets() {
   cat <<'EOF'
+glm-5.1:cloud|GLM 5.1 Cloud|General assistant default
 gemma3:27b-cloud|Gemma 3 27B Cloud|General assistant default
 gemma4:26b-cloud|Gemma 4 26B Cloud|Newer flagship-style general model
 qwen3.5:27b-cloud|Qwen 3.5 27B Cloud|Strong multilingual assistant

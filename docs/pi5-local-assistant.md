@@ -42,7 +42,7 @@ The installer now offers these Pi-oriented brain profiles:
 - `Higher quality`: Gemma 2 2B, slower but a bit stronger
 - `Custom`: manual Hugging Face GGUF repo entry
 - `LiteRT-LM`: LiteRT local model path using `.litertlm` models such as Gemma 3n or Gemma 4 E2B
-- `Ollama Cloud`: `gemma3:27b-cloud`, prompts for `OLLAMA_API_KEY`
+- `Ollama Cloud`: curated presets including `gemma3:27b-cloud`, `gemma4:26b-cloud`, `qwen3.5:27b-cloud`, and `glm-5.1:cloud`, plus a custom tag option, and prompts for `OLLAMA_API_KEY`
 
 When you choose a brain profile, the installer also writes matching defaults for threads, context size, batch size, ubatch size, and chat history length into `.env`.
 
@@ -122,7 +122,7 @@ If your priority is good Polish recognition plus a smarter remote model, the rec
 - `FASTER_WHISPER_LANGUAGE=pl`
 - `FASTER_WHISPER_MODEL_SIZE_OR_PATH=base` for better speed or `small` for better recognition quality
 - `LLM_SERVER=ollama-cloud`
-- `OLLAMA_MODEL=gemma3:27b-cloud`
+- `OLLAMA_MODEL=glm-5.1:cloud`
 - `ENABLE_THINKING=false`
 - `USE_CAPTURED_IMAGE_IN_CHAT=false`
 

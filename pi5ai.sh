@@ -646,7 +646,7 @@ pick_polish_speed_profile() {
   esac
 
   if [ "${LLM_SERVER_SELECTION}" = "ollama-cloud" ] && [ -z "${OLLAMA_MODEL_VALUE:-}" ]; then
-    OLLAMA_MODEL_VALUE="gemma3:27b-cloud"
+    OLLAMA_MODEL_VALUE="glm-5.1:cloud"
   fi
 }
 
@@ -1814,6 +1814,40 @@ pick_litert_model() {
   LITERT_LM_ENABLE_SPECULATIVE_DECODING_VALUE=$(prompt_value "LiteRT-LM speculative decoding (auto/true/false)" "${LITERT_LM_ENABLE_SPECULATIVE_DECODING_VALUE}")
 }
 
+pick_ollama_cloud_model() {
+  local choice
+
+  choice=$(choose_from_menu \
+    "Select the Ollama Cloud model" \
+    "4" \
+    "1|Gemma 3 27B Cloud (gemma3:27b-cloud)" \
+    "2|Gemma 4 26B Cloud (gemma4:26b-cloud)" \
+    "3|Qwen 3.5 27B Cloud (qwen3.5:27b-cloud)" \
+    "4|GLM 5.1 Cloud (glm-5.1:cloud)" \
+    "5|Custom Ollama Cloud model tag")
+
+  case "${choice}" in
+    1)
+      OLLAMA_MODEL_VALUE="gemma3:27b-cloud"
+      ;;
+    2)
+      OLLAMA_MODEL_VALUE="gemma4:26b-cloud"
+      ;;
+    3)
+      OLLAMA_MODEL_VALUE="qwen3.5:27b-cloud"
+      ;;
+    4)
+      OLLAMA_MODEL_VALUE="glm-5.1:cloud"
+      ;;
+    5)
+      OLLAMA_MODEL_VALUE=$(prompt_required_value "Enter Ollama Cloud model name")
+      ;;
+    *)
+      die "Invalid Ollama Cloud model choice"
+      ;;
+  esac
+}
+
 pick_llm_runtime_mode() {
   local choice
   choice=$(choose_from_menu \
@@ -1891,7 +1925,7 @@ pick_llm_runtime_mode() {
       SERVE_LLAMA_CPP_VALUE="false"
       SERVE_OLLAMA_VALUE="false"
       OLLAMA_ENDPOINT_VALUE=$(prompt_value "Enter Ollama Cloud API endpoint" "https://ollama.com")
-      OLLAMA_MODEL_VALUE=$(prompt_value "Enter Ollama Cloud model name" "gemma3:27b-cloud")
+      pick_ollama_cloud_model
       OLLAMA_API_KEY_VALUE=$(prompt_required_value "Enter OLLAMA_API_KEY")
       OLLAMA_ENABLE_TOOLS_VALUE="false"
       BRAIN_PROFILE_NAME="ollama-cloud"
