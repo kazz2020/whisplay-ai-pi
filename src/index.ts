@@ -1,6 +1,7 @@
 import { display } from "./device/display";
 import Battery from "./device/battery";
 import ChatFlow from "./core/ChatFlow";
+import { startKnowledgeAutoIndexing } from "./core/Knowledge";
 import dotenv from "dotenv";
 import { connect } from "net";
 import dns from "dns";
@@ -46,6 +47,8 @@ const intervalCheckNetwork = () => {
   }, 10000);
 };
 intervalCheckNetwork();
+
+startKnowledgeAutoIndexing();
 
 new ChatFlow({
   enableCamera: process.env.ENABLE_CAMERA === "true",

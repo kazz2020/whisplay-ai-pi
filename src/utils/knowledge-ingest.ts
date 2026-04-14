@@ -24,6 +24,14 @@ const markItDownExtensions = new Set([
   ".htm",
   ".epub",
   ".rtf",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".tif",
+  ".tiff",
 ]);
 const enableMarkItDown =
   (process.env.RAG_MARKITDOWN_ENABLED || "true").toLowerCase() !== "false";

@@ -35,6 +35,22 @@ export function registerLLMPlugins(): void {
   } as LLMPlugin);
 
   pluginRegistry.register({
+    name: "deepseek",
+    displayName: "DeepSeek LLM",
+    version: "1.0.0",
+    type: "llm",
+    description: "DeepSeek language model via OpenAI-compatible API",
+    activate: () => {
+      const mod = require("../../cloud-api/openai/openai-llm").default;
+      return {
+        chatWithLLMStream: mod.chatWithLLMStream,
+        resetChatHistory: mod.resetChatHistory,
+        summaryTextWithLLM: mod.summaryTextWithLLM,
+      };
+    },
+  } as LLMPlugin);
+
+  pluginRegistry.register({
     name: "llama.cpp",
     displayName: "llama.cpp LLM",
     version: "1.0.0",

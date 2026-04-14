@@ -203,11 +203,18 @@ Recommended flow:
 
 1. Put knowledge files into `data/knowledge/`.
 2. Plain `.txt` and `.md` files are indexed directly.
-3. If you want automatic conversion for PDF, Word, PowerPoint, or Excel files, install MarkItDown with `pip install 'markitdown[pdf,docx,pptx,xlsx,xls]' --break-system-packages`.
+3. If you want automatic conversion for PDF, images, Word, PowerPoint, or Excel files, install MarkItDown with `pip install 'markitdown[pdf,docx,pptx,xlsx,xls]' --break-system-packages`.
 4. The legacy `knowledge/` directory is still scanned for backward compatibility.
 5. Enable RAG in `.env`.
 6. Configure `QDRANT_HOST`, `OLLAMA_EMBEDDING_ENDPOINT`, and `OLLAMA_EMBEDDING_MODEL`.
 7. Build the knowledge index with `bash index_knowledge.sh`.
+
+If you want indexing to happen automatically when the app starts and when files in `data/knowledge/` change, enable:
+
+- `RAG_AUTO_INDEX_ON_START=true`
+- `RAG_AUTO_INDEX_INTERVAL_SECONDS=60`
+
+Automatic mode uses incremental indexing and removes entries for deleted knowledge files without prompting.
 
 The Pi installer now includes a RAG setup step and writes the relevant `.env` values for you.
 

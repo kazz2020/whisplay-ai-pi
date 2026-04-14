@@ -1,7 +1,9 @@
 import { vectorDB, embedText, summaryTextWithLLM, enableRAG } from "../cloud-api/knowledge";
+import fs from "fs";
 import { chunkText } from "../utils/knowledge";
 import {
   getKnowledgeInputDirs,
+  KnowledgeSource,
   listKnowledgeSources,
   loadKnowledgeSourceContent,
 } from "../utils/knowledge-ingest";
@@ -28,6 +30,17 @@ const knowledgeMaxContextChars = parseInt(
 );
 const promptPrefix = process.env.RAG_KNOWLEDGE_SUMMARY_PROMPT_PREFIX || "Please provide a concise summary for the following text in **30 words** or less:";
 const enableKnowledgeSummary = (process.env.ENABLE_KNOWLEDGE_SUMMARY || "").toLowerCase() === "true";
+const enableKnowledgeAutoIndex =
+  (process.env.RAG_AUTO_INDEX_ON_START || "false").toLowerCase() === "true";
+const knowledgeAutoIndexIntervalMs = Math.max(
+  parseInt(process.env.RAG_AUTO_INDEX_INTERVAL_SECONDS || "60", 10) * 1000,
+  5000,
+);
+
+type IndexKnowledgeOptions = {
+  collectionMode?: "auto" | "incremental" | "full";
+  deletedSourceStrategy?: "prompt" | "remove" | "keep";
+};
 
 type KnowledgeSearchResult = {
   id: number | string;
@@ -39,7 +52,15 @@ type KnowledgeSearchResult = {
     | null;
 };
 
-export async function indexKnowledgeCollection() {
+let isIndexingKnowledge = false;
+let knowledgeAutoIndexTimer: NodeJS.Timeout | null = null;
+let lastKnowledgeSnapshot = "";
+
+export async function indexKnowledgeCollection(
+  options: IndexKnowledgeOptions = {},
+) {
+  const collectionMode = options.collectionMode || "auto";
+  const deletedSourceStrategy = options.deletedSourceStrategy || "prompt";
 
   if (!enableRAG) {
     console.log(
@@ -48,116 +69,153 @@ export async function indexKnowledgeCollection() {
     return;
   }
 
-  const dimension = await embedText("test").then(
-    (embedding) => embedding.length,
-  );
+  if (isIndexingKnowledge) {
+    console.log("[RAG] Knowledge indexing is already in progress. Skipping duplicate request.");
+    return;
+  }
 
-  const collections = await vectorDB.getCollections();
-  const collectionExists = collections.includes(collectionName);
-  let shouldRecreate = false;
+  isIndexingKnowledge = true;
 
-  if (collectionExists) {
-    const collectionInfo = await vectorDB.getCollection(collectionName);
-    const existingDimension = getCollectionVectorSize(collectionInfo);
-    if (existingDimension && existingDimension !== dimension) {
-      shouldRecreate = await promptYesNo(
-        `\nEmbedding dimension mismatch (existing: ${existingDimension}, current: ${dimension}). Full reindex required. Continue? (y/N): `
-      );
-      if (!shouldRecreate) {
-        console.log("Aborted indexing due to dimension mismatch.");
-        return;
+  try {
+    const dimension = await embedText("test").then(
+      (embedding) => embedding.length,
+    );
+
+    const collections = await vectorDB.getCollections();
+    const collectionExists = collections.includes(collectionName);
+    let shouldRecreate = false;
+
+    if (collectionExists) {
+      const collectionInfo = await vectorDB.getCollection(collectionName);
+      const existingDimension = getCollectionVectorSize(collectionInfo);
+      if (existingDimension && existingDimension !== dimension) {
+        shouldRecreate = await promptYesNo(
+          `\nEmbedding dimension mismatch (existing: ${existingDimension}, current: ${dimension}). Full reindex required. Continue? (y/N): `
+        );
+        if (!shouldRecreate) {
+          console.log("Aborted indexing due to dimension mismatch.");
+          return;
+        }
+      } else if (collectionMode === "full") {
+        shouldRecreate = true;
+      } else if (collectionMode === "incremental") {
+        shouldRecreate = false;
+      } else {
+        const choice = await promptChoice(
+          "\nChoose indexing mode: \n\n(i)ncremental \n(f)ull rebuild (WARNING: This operation will delete existing data). \n\n[i]: ",
+          "i"
+        );
+        shouldRecreate = choice === "f";
       }
     } else {
-      const choice = await promptChoice(
-        "\nChoose indexing mode: \n\n(i)ncremental \n(f)ull rebuild (WARNING: This operation will delete existing data). \n\n[i]: ",
-        "i"
-      );
-      shouldRecreate = choice === "f";
-    }
-  } else {
-    shouldRecreate = true;
-  }
-
-  if (shouldRecreate) {
-    if (collectionExists) {
-      await vectorDB.deleteCollection(collectionName);
-    }
-    console.log(`Creating knowledge collection with dimension: ${dimension}`);
-    await vectorDB.createCollection(collectionName, dimension, "Cosine");
-  }
-
-  const sources = listKnowledgeSources();
-
-  if (!sources.length) {
-    console.log(
-      `No knowledge files found to index. Checked: ${getKnowledgeInputDirs().join(", ")}`,
-    );
-  }
-
-  const fileSet = new Set(sources.map((source) => source.source));
-
-  for (const source of sources) {
-    const content = loadKnowledgeSourceContent(source);
-    if (!content) {
-      console.log(`Skipping unreadable or unsupported knowledge file: ${source.source}`);
-      continue;
+      shouldRecreate = true;
     }
 
-    const fileHash = hashText(content);
-
-    const existingInfo = await getExistingFileInfo(source.source);
-    if (existingInfo.exists && existingInfo.hash === fileHash) {
-      console.log(`Skipping unchanged file: ${source.source}`);
-      continue;
+    if (shouldRecreate) {
+      if (collectionExists) {
+        await vectorDB.deleteCollection(collectionName);
+      }
+      console.log(`Creating knowledge collection with dimension: ${dimension}`);
+      await vectorDB.createCollection(collectionName, dimension, "Cosine");
     }
 
-    if (existingInfo.exists) {
-      await vectorDB.deletePointsByFilter(
-        collectionName,
-        buildSourceFilter(source.source),
-      );
-    }
+    const sources = listKnowledgeSources();
 
-    const chunks = chunkText(content, 500, 80);
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      const embedding = await embedText(chunk);
+    if (!sources.length) {
       console.log(
-        `Embedding chunk ${i + 1}/${chunks.length} of file ${source.source}`,
+        `No knowledge files found to index. Checked: ${getKnowledgeInputDirs().join(", ")}`,
       );
-      const summary = enableKnowledgeSummary
-        ? await summaryTextWithLLM(chunk, promptPrefix)
-        : "";
-      await vectorDB.upsertPoints(collectionName, [
-        {
-          id: uuidv4(),
-          vector: embedding,
-          payload: {
-            content: chunk,
-            summary,
-            source: source.source,
-            chunkIndex: i,
-            fileHash,
-          },
-        },
-      ]);
     }
 
-    console.log(`Indexed file: ${source.source}`);
-  }
+    const fileSet = new Set(sources.map((source) => source.source));
 
-  const deletedSources = await getDeletedSources(fileSet);
-  if (deletedSources.length > 0) {
-    const answer = await promptYesNo(
-      `Detected ${deletedSources.length} removed knowledge files. Remove related knowledge? (y/N): `
-    );
-    if (answer) {
-      for (const source of deletedSources) {
-        await vectorDB.deletePointsByFilter(collectionName, buildSourceFilter(source));
-        console.log(`Removed knowledge for file: ${source}`);
+    for (const source of sources) {
+      const content = loadKnowledgeSourceContent(source);
+      if (!content) {
+        console.log(`Skipping unreadable or unsupported knowledge file: ${source.source}`);
+        continue;
+      }
+
+      const fileHash = hashText(content);
+
+      const existingInfo = await getExistingFileInfo(source.source);
+      if (existingInfo.exists && existingInfo.hash === fileHash) {
+        console.log(`Skipping unchanged file: ${source.source}`);
+        continue;
+      }
+
+      if (existingInfo.exists) {
+        await vectorDB.deletePointsByFilter(
+          collectionName,
+          buildSourceFilter(source.source),
+        );
+      }
+
+      const chunks = chunkText(content, 500, 80);
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const embedding = await embedText(chunk);
+        console.log(
+          `Embedding chunk ${i + 1}/${chunks.length} of file ${source.source}`,
+        );
+        const summary = enableKnowledgeSummary
+          ? await summaryTextWithLLM(chunk, promptPrefix)
+          : "";
+        await vectorDB.upsertPoints(collectionName, [
+          {
+            id: uuidv4(),
+            vector: embedding,
+            payload: {
+              content: chunk,
+              summary,
+              source: source.source,
+              chunkIndex: i,
+              fileHash,
+            },
+          },
+        ]);
+      }
+
+      console.log(`Indexed file: ${source.source}`);
+    }
+
+    const deletedSources = await getDeletedSources(fileSet);
+    if (deletedSources.length > 0) {
+      const shouldRemoveDeletedSources = await resolveDeletedSourcesAction(
+        deletedSources.length,
+        deletedSourceStrategy,
+      );
+      if (shouldRemoveDeletedSources) {
+        for (const source of deletedSources) {
+          await vectorDB.deletePointsByFilter(collectionName, buildSourceFilter(source));
+          console.log(`Removed knowledge for file: ${source}`);
+        }
       }
     }
+  } finally {
+    isIndexingKnowledge = false;
   }
+}
+
+export function startKnowledgeAutoIndexing() {
+  if (!enableRAG || !enableKnowledgeAutoIndex) {
+    return;
+  }
+
+  if (knowledgeAutoIndexTimer) {
+    return;
+  }
+
+  console.log(
+    `[RAG] Auto indexing enabled. Watching ${getKnowledgeInputDirs().join(", ")} every ${Math.floor(
+      knowledgeAutoIndexIntervalMs / 1000,
+    )}s.`,
+  );
+
+  void runKnowledgeAutoIndex("startup");
+  knowledgeAutoIndexTimer = setInterval(() => {
+    void runKnowledgeAutoIndex("change-detect");
+  }, knowledgeAutoIndexIntervalMs);
 }
 
 function getCollectionVectorSize(collectionInfo: any): number | null {
@@ -239,6 +297,58 @@ async function getDeletedSources(fileSet: Set<string>): Promise<string[]> {
   } while (offset !== null && offset !== undefined);
 
   return Array.from(sources).filter((source) => !fileSet.has(source));
+}
+
+async function resolveDeletedSourcesAction(
+  deletedSourceCount: number,
+  strategy: "prompt" | "remove" | "keep",
+): Promise<boolean> {
+  if (strategy === "remove") {
+    return true;
+  }
+  if (strategy === "keep") {
+    return false;
+  }
+  return await promptYesNo(
+    `Detected ${deletedSourceCount} removed knowledge files. Remove related knowledge? (y/N): `
+  );
+}
+
+async function runKnowledgeAutoIndex(reason: string) {
+  const currentSnapshot = buildKnowledgeSnapshot();
+  if (reason !== "startup" && currentSnapshot === lastKnowledgeSnapshot) {
+    return;
+  }
+
+  console.log(`[RAG] Starting automatic knowledge indexing (${reason}).`);
+  try {
+    await indexKnowledgeCollection({
+      collectionMode: "incremental",
+      deletedSourceStrategy: "remove",
+    });
+    lastKnowledgeSnapshot = buildKnowledgeSnapshot();
+    console.log("[RAG] Automatic knowledge indexing completed.");
+  } catch (error) {
+    console.error("[RAG] Automatic knowledge indexing failed:", error);
+  }
+}
+
+function buildKnowledgeSnapshot(): string {
+  const sources = listKnowledgeSources();
+  if (sources.length === 0) {
+    return "";
+  }
+
+  return sources.map(serializeKnowledgeSource).join("|");
+}
+
+function serializeKnowledgeSource(source: KnowledgeSource): string {
+  try {
+    const stats = fs.statSync(source.filePath);
+    return `${source.source}:${stats.size}:${stats.mtimeMs}`;
+  } catch {
+    return `${source.source}:missing`;
+  }
 }
 
 async function promptYesNo(question: string): Promise<boolean> {

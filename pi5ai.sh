@@ -258,6 +258,12 @@ print_final_review() {
     print_review_item "Cloud endpoint" "${OLLAMA_ENDPOINT_VALUE}"
     print_review_item "Cloud model" "${OLLAMA_MODEL_VALUE}"
     print_review_item "OLLAMA_API_KEY" "$(mask_secret "${OLLAMA_API_KEY_VALUE}")"
+  elif [ "${LLM_SERVER_SELECTION}" = "deepseek" ]; then
+    print_review_item "LLM runtime" "DeepSeek API"
+    print_review_item "Profile" "${BRAIN_PROFILE_LABEL}"
+    print_review_item "API base URL" "${OPENAI_API_BASE_URL_VALUE}"
+    print_review_item "Model" "${OPENAI_LLM_MODEL_VALUE}"
+    print_review_item "API key" "$(mask_secret "${OPENAI_API_KEY_VALUE}")"
   else
     print_review_item "LLM runtime" "OpenAI-compatible API"
     print_review_item "Profile" "${BRAIN_PROFILE_LABEL}"
@@ -1904,13 +1910,13 @@ pick_llm_runtime_mode() {
       fi
       ;;
     4)
-      LLM_SERVER_SELECTION="openai"
-      LLM_PROVIDER="openai"
+      LLM_SERVER_SELECTION="deepseek"
+      LLM_PROVIDER="deepseek"
       SERVE_LLAMA_CPP_VALUE="false"
       SERVE_OLLAMA_VALUE="false"
-      OPENAI_API_BASE_URL_VALUE=$(prompt_value "Enter OpenAI-compatible API base URL" "https://api.deepseek.com/v1")
-      OPENAI_API_KEY_VALUE=$(prompt_required_value "Enter DeepSeek/OpenAI-compatible API key")
-      OPENAI_LLM_MODEL_VALUE=$(prompt_value "Enter online model name" "deepseek-chat")
+      OPENAI_API_BASE_URL_VALUE=$(prompt_value "Enter DeepSeek API base URL" "https://api.deepseek.com/v1")
+      OPENAI_API_KEY_VALUE=$(prompt_required_value "Enter DeepSeek API key")
+      OPENAI_LLM_MODEL_VALUE=$(prompt_value "Enter DeepSeek model name" "deepseek-chat")
       OPENAI_ENABLE_TOOLS_VALUE="false"
       BRAIN_PROFILE_NAME="deepseek-api"
       BRAIN_PROFILE_LABEL="DeepSeek API"
@@ -2452,6 +2458,9 @@ while true; do
   elif [ "${LLM_SERVER_SELECTION}" = "litert-lm" ]; then
     log "Selected brain profile: ${BRAIN_PROFILE_LABEL}"
     log "LLM mode: LiteRT-LM (${LITERT_LM_MODEL_REPO_VALUE})"
+  elif [ "${LLM_SERVER_SELECTION}" = "deepseek" ]; then
+    log "Selected brain profile: ${BRAIN_PROFILE_LABEL}"
+    log "LLM mode: DeepSeek API (${OPENAI_API_BASE_URL_VALUE}, model ${OPENAI_LLM_MODEL_VALUE})"
   elif [ "${LLM_SERVER_SELECTION}" = "openai" ]; then
     log "Selected brain profile: ${BRAIN_PROFILE_LABEL}"
     log "LLM mode: online OpenAI-compatible endpoint (${OPENAI_API_BASE_URL_VALUE}, model ${OPENAI_LLM_MODEL_VALUE})"
@@ -2626,7 +2635,7 @@ if [ "${LLM_SERVER_SELECTION}" = "ollama" ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "OLLAMA_ENDPOINT" "${OLLAMA_ENDPOINT_VALUE}"
   set_env_value "${CHATBOT_ENV_FILE}" "OLLAMA_MODEL" "${OLLAMA_MODEL_VALUE}"
   set_env_value "${CHATBOT_ENV_FILE}" "OLLAMA_ENABLE_TOOLS" "${OLLAMA_ENABLE_TOOLS_VALUE}"
-elif [ "${LLM_SERVER_SELECTION}" = "openai" ]; then
+elif [ "${LLM_SERVER_SELECTION}" = "openai" ] || [ "${LLM_SERVER_SELECTION}" = "deepseek" ]; then
   set_env_value "${CHATBOT_ENV_FILE}" "OPENAI_API_BASE_URL" "${OPENAI_API_BASE_URL_VALUE}"
   set_env_value "${CHATBOT_ENV_FILE}" "OPENAI_API_KEY" "${OPENAI_API_KEY_VALUE}"
   set_env_value "${CHATBOT_ENV_FILE}" "OPENAI_LLM_MODEL" "${OPENAI_LLM_MODEL_VALUE}"

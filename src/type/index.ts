@@ -30,6 +30,7 @@ export enum ASRServer {
 export enum LLMServer {
   volcengine = "volcengine",
   openai = "openai",
+  deepseek = "deepseek",
   llamacpp = "llama.cpp",
   litertlm = "litert-lm",
   ollama = "ollama",

@@ -51,7 +51,7 @@ The installer also now lets you choose the LLM runtime mode:
 - `Local llama.cpp on the Pi`: fully offline GGUF path
 - `Local LiteRT-LM on the Pi`: fully offline `.litertlm` path
 - `Ollama on another computer in your LAN`: free and no API key, but needs another machine
-- `DeepSeek API via OpenAI-compatible endpoint`: online mode for users who already have a DeepSeek key
+- `DeepSeek API`: online mode for users who already have a DeepSeek key; the installer writes `LLM_SERVER=deepseek`
 
 When you choose `Ollama Cloud`, the installer instead writes `LLM_SERVER=ollama-cloud`, `OLLAMA_ENDPOINT`, `OLLAMA_MODEL`, and `OLLAMA_API_KEY` into `.env`, and skips local llama.cpp setup.
 
@@ -134,11 +134,13 @@ After install, add your knowledge files to `data/knowledge/` and run:
 pip install 'markitdown[pdf,docx,pptx,xlsx,xls]' --break-system-packages
 ```
 
-if you want automatic conversion for PDF, Word, PowerPoint, or Excel files. The legacy `knowledge/` directory is still scanned too.
+if you want automatic conversion for PDF, images, Word, PowerPoint, or Excel files. The legacy `knowledge/` directory is still scanned too.
 
 ```bash
 bash index_knowledge.sh
 ```
+
+If you want the chatbot service itself to keep the knowledge index fresh after startup, enable `RAG_AUTO_INDEX_ON_START=true` in `.env`. It will poll for changes every 60 seconds by default. You can adjust that with `RAG_AUTO_INDEX_INTERVAL_SECONDS`.
 
 ## Fresh Pi OS install
 

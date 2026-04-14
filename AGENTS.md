@@ -174,6 +174,7 @@ whisplay help                             # Show help
 ```bash
 # Add files to data/knowledge/ before indexing. Plain .txt/.md are read directly.
 # Optional document conversion: pip install 'markitdown[pdf,docx,pptx,xlsx,xls]' --break-system-packages
+# Optional automatic indexing during app runtime: set RAG_AUTO_INDEX_ON_START=true
 # Index documents for RAG
 bash index_knowledge.sh
 # or via CLI
