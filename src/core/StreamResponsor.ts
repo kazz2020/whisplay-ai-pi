@@ -213,6 +213,10 @@ export class StreamResponser {
     }
     this.textCallback?.(this.displaySentences.join(" "));
     this.parsedSentences.length = 0;
+
+    if (!this.isPlaying && this.speakQueue.length === 0 && !this.partialContent) {
+      this.playEndResolve();
+    }
   };
 
   getPlayEndPromise = (): Promise<void> => {

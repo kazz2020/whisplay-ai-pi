@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import { ttsDir } from "../../utils/dir";
 import { TTSResult, TTSServer } from "../../type";
 import { defaultPortMap } from "./common";
+import { traceEvent } from "../../utils/trace";
 
 dotenv.config();
 
@@ -15,6 +16,8 @@ const piperHttpModel =
   process.env.PIPER_HTTP_MODEL || "en_US-amy-medium";
 const piperHttpLengthScale =
   process.env.PIPER_HTTP_LENGTH_SCALE || "1";
+const piperHttpBaseUrl =
+  process.env.PIPER_HTTP_BASE_URL || `http://${piperHttpHost}:${piperHttpPort}`;
 
 const ttsServer = (process.env.TTS_SERVER || "").toLowerCase();
 
@@ -48,94 +51,91 @@ if (ttsServer === TTSServer.piperhttp) {
 const piperHttpTTS = async (
   text: string
 ): Promise<TTSResult> => {
-  return new Promise((resolve, reject) => {
-    const now = Date.now();
-    const tempWavFile = path.join(ttsDir, `piper_http_${now}.wav`);
-    const convertedWavFile = path.join(ttsDir, `piper_http_${now}_converted.wav`);
+  const now = Date.now();
+  const tempWavFile = path.join(ttsDir, `piper_http_${now}.wav`);
+  const convertedWavFile = path.join(ttsDir, `piper_http_${now}_converted.wav`);
 
-    // curl -X POST -H 'Content-Type: application/json' -d '{ "text": "This is a test." }' -o test.wav localhost:8805
-    // text may contain double quotes, need to escape them
-    const escapedText = text.replace(/"/g, '\\"');
+  try {
+    traceEvent("tts", "Piper HTTP request started", {
+      baseUrl: piperHttpBaseUrl,
+      textLength: text.length,
+      lengthScale: piperHttpLengthScale,
+    });
 
-    const piperProcess = spawn('curl', [
-      "-X",
-      "POST",
-      "-H",
-      "Content-Type: application/json",
-      "-d",
-      `{ "text": "${escapedText}", "length_scale": ${piperHttpLengthScale} }`,
-      "-o",
+    const response = await fetch(`${piperHttpBaseUrl}/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text,
+        length_scale: parseFloat(piperHttpLengthScale),
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(`Piper HTTP request failed with status ${response.status}`);
+      traceEvent("tts", "Piper HTTP request failed", {
+        status: response.status,
+        statusText: response.statusText,
+      });
+      return { duration: 0 };
+    }
+
+    const audioBuffer = Buffer.from(await response.arrayBuffer());
+    fs.writeFileSync(tempWavFile, audioBuffer);
+    traceEvent("tts", "Piper HTTP response received", {
+      bytes: audioBuffer.length,
       tempWavFile,
-      `${piperHttpHost}:${piperHttpPort}`
-    ]);
-
-    piperProcess.stdin.write(text);
-    piperProcess.stdin.end();
-
-    piperProcess.on("close", async (code: number) => {
-      if (code !== 0) {
-        // reject(new Error(`Piper process exited with code ${code}`));
-        console.error(`Piper process exited with code ${code}`);
-        resolve({ duration: 0 });
-        return;
-      }
-
-      if (fs.existsSync(tempWavFile) === false) {
-        console.log("Piper output file not found:", tempWavFile);
-        resolve({ duration: 0 });
-        return;
-      }
-
-      try {
-        // get sample rate and channels of the generated wav file
-        const originalBuffer = fs.readFileSync(tempWavFile);
-        const header = originalBuffer.subarray(0, 44);
-        const originalSampleRate = header.readUInt32LE(24);
-        const originalChannels = header.readUInt16LE(22);
-
-        // use sox to convert wav to 24kHz, 16bit, stereo
-        await new Promise<void>((res, rej) => {
-            
-          const soxProcess = spawn("sox", [
-            "-v",
-            "0.9",
-            tempWavFile,
-            "-r",
-            originalSampleRate.toString(),
-            "-c",
-            originalChannels.toString(),
-            convertedWavFile,
-          ]);
-
-          soxProcess.on("close", (soxCode: number) => {
-            if (soxCode !== 0) {
-              console.error(`Sox process exited with code ${soxCode}`);
-              rej(new Error(`Sox process exited with code ${soxCode}`));
-            } else {
-              // Replace original file with converted file
-              fs.unlinkSync(tempWavFile);
-              res();
-            }
-          });
-        });
-
-        const duration = (await getAudioDurationInSeconds(convertedWavFile)) * 1000;
-        // Clean up temp file
-        // fs.unlinkSync(convertedWavFile);
-        
-        resolve({ filePath: convertedWavFile, duration });
-      } catch (error) {
-        // reject(error);
-        console.log("Error processing Piper output:", `"${text}"`, error);
-        resolve({ duration: 0 });
-      }
     });
 
-    piperProcess.on("error", (error: any) => {
-      console.log("Piper process error:", `"${text}"`, error);
-      resolve({ duration: 0 });
+    if (fs.existsSync(tempWavFile) === false) {
+      console.log("Piper output file not found:", tempWavFile);
+      return { duration: 0 };
+    }
+
+    const originalBuffer = fs.readFileSync(tempWavFile);
+    const header = originalBuffer.subarray(0, 44);
+    const originalSampleRate = header.readUInt32LE(24);
+    const originalChannels = header.readUInt16LE(22);
+
+    await new Promise<void>((resolve, reject) => {
+      const soxProcess = spawn("sox", [
+        "-v",
+        "0.9",
+        tempWavFile,
+        "-r",
+        originalSampleRate.toString(),
+        "-c",
+        originalChannels.toString(),
+        convertedWavFile,
+      ]);
+
+      soxProcess.on("close", (soxCode: number) => {
+        if (soxCode !== 0) {
+          console.error(`Sox process exited with code ${soxCode}`);
+          reject(new Error(`Sox process exited with code ${soxCode}`));
+        } else {
+          fs.unlinkSync(tempWavFile);
+          resolve();
+        }
+      });
     });
-  });
+
+    const duration = (await getAudioDurationInSeconds(convertedWavFile)) * 1000;
+    traceEvent("tts", "Piper HTTP audio prepared", {
+      convertedWavFile,
+      duration,
+    });
+
+    return { filePath: convertedWavFile, duration };
+  } catch (error) {
+    console.log("Error processing Piper output:", `"${text}"`, error);
+    traceEvent("tts", "Piper HTTP synthesis error", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return { duration: 0 };
+  }
 };
 
 function cleanup() {

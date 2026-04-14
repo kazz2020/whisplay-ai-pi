@@ -83,6 +83,27 @@ const keepAliveOllama = () => {
     });
 };
 
+const formatOllamaError = (error: unknown): string => {
+  if (!axios.isAxiosError(error)) {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  const status = error.response?.status;
+  if (status === 401 || status === 403) {
+    return "Ollama Cloud rejected the request. Check OLLAMA_API_KEY and confirm this model is enabled for your account.";
+  }
+
+  if (status === 404) {
+    return `Ollama model '${ollamaModel}' was not found at ${ollamaEndpoint}.`;
+  }
+
+  if (error.code === "ECONNREFUSED") {
+    return `Cannot connect to Ollama at ${ollamaEndpoint}.`;
+  }
+
+  return error.message;
+};
+
 if (llmServer.trim().toLowerCase() === "ollama") {
   // initialize request to ollama server with empty prompt, to load the model into memory
   keepAliveOllama();
@@ -298,7 +319,7 @@ const chatWithLLMStream: ChatWithLLMStreamFunction = async (
       }
     });
   } catch (error: any) {
-    console.error("Error:", error.message);
+    console.error("Error:", formatOllamaError(error));
     endResolve();
     endCallback();
   }

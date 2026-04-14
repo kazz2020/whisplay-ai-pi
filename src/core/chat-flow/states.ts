@@ -50,6 +50,7 @@ const wakeWordVoiceDetectLevelCap = Math.max(
 
 export const flowStates: Record<FlowName, FlowStateHandler> = {
   sleep: (ctx: ChatFlowContext) => {
+    const currentText = getCurrentStatus().text || "";
     onButtonPressed(() => {
       resetCameraModeControl();
       // Stop any playing music when waking up
@@ -79,7 +80,7 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
       emoji: "😴",
       RGB: "#000055",
       rag_icon_visible: false,
-      ...(getCurrentStatus().text.endsWith("Listening...") || !getCurrentStatus().text
+      ...(currentText.endsWith("Listening...") || !currentText
         ? {
           text: `Long Press the button to say something${ctx.enableCamera ? ",\ndouble click to launch camera" : ""
             }.`,
@@ -540,6 +541,22 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
     getPlayEndPromise().then(() => {
       stopThinkingSound();
       if (ctx.currentFlowName === "answer" && currentAnswerId === ctx.answerId) {
+        const finalAssistantText = ctx.pendingAssistantText.trim();
+        if (!finalAssistantText) {
+          ctx.finishTurnTrace("llm_empty_response");
+          clearPendingCapturedImgForChat();
+          display({
+            status: "error",
+            emoji: "⚠️",
+            text: "No answer returned. Check OLLAMA_API_KEY or access to the selected Ollama Cloud model.",
+            image_icon_visible: false,
+          });
+          if (ctx.wakeSessionActive) {
+            ctx.endWakeSession();
+          }
+          ctx.transitionTo("sleep");
+          return;
+        }
         ctx.finishTurnTrace("completed", {
           enterMusicAfterAnswer: ctx.enterMusicAfterAnswer,
           wakeSessionActive: ctx.wakeSessionActive,
