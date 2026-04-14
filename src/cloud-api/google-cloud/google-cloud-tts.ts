@@ -13,13 +13,34 @@ import {
 
 dotenv.config();
 
+type GoogleCloudSsmlGender =
+  | "SSML_VOICE_GENDER_UNSPECIFIED"
+  | "MALE"
+  | "FEMALE"
+  | "NEUTRAL";
+
+const normalizeSsmlGender = (value: string | undefined): GoogleCloudSsmlGender => {
+  switch ((value || "NEUTRAL").trim().toUpperCase()) {
+    case "MALE":
+      return "MALE";
+    case "FEMALE":
+      return "FEMALE";
+    case "SSML_VOICE_GENDER_UNSPECIFIED":
+    case "UNSPECIFIED":
+      return "SSML_VOICE_GENDER_UNSPECIFIED";
+    default:
+      return "NEUTRAL";
+  }
+};
+
 const googleCloudTTSLanguageCode = normalizeGoogleLanguageCode(
   process.env.GOOGLE_CLOUD_TTS_LANGUAGE_CODE,
   "en-US",
 );
 const googleCloudTTSVoiceName = (process.env.GOOGLE_CLOUD_TTS_VOICE_NAME || "").trim();
-const googleCloudTTSSsmlGender =
-  (process.env.GOOGLE_CLOUD_TTS_SSML_GENDER || "NEUTRAL").toUpperCase() as keyof typeof textToSpeech.protos.google.cloud.texttospeech.v1.SsmlVoiceGender;
+const googleCloudTTSSsmlGender = normalizeSsmlGender(
+  process.env.GOOGLE_CLOUD_TTS_SSML_GENDER,
+);
 
 const textToSpeechClient = new textToSpeech.TextToSpeechClient(
   googleCloudClientOptions,
@@ -39,14 +60,10 @@ const googleCloudTTS = async (text: string): Promise<TTSResult> => {
       voice: {
         languageCode: googleCloudTTSLanguageCode,
         ...(googleCloudTTSVoiceName ? { name: googleCloudTTSVoiceName } : {}),
-        ssmlGender:
-          textToSpeech.protos.google.cloud.texttospeech.v1.SsmlVoiceGender[
-            googleCloudTTSSsmlGender
-          ] || textToSpeech.protos.google.cloud.texttospeech.v1.SsmlVoiceGender.NEUTRAL,
+        ssmlGender: googleCloudTTSSsmlGender,
       },
       audioConfig: {
-        audioEncoding:
-          textToSpeech.protos.google.cloud.texttospeech.v1.AudioEncoding.LINEAR16,
+        audioEncoding: "LINEAR16",
       },
     });
 
