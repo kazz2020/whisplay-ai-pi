@@ -128,7 +128,13 @@ If your priority is good Polish recognition plus a smarter remote model, the rec
 
 The installer now has a Polish speed profile for this and can also apply Pi memory tuning with zram and a modest disk swap fallback. This is useful for smoother ASR, indexing, and package builds on an 8GB Raspberry Pi 5.
 
-After install, add your knowledge files to the repository `knowledge/` directory and run:
+After install, add your knowledge files to `data/knowledge/` and run:
+
+```bash
+pip install 'markitdown[pdf,docx,pptx,xlsx,xls]' --break-system-packages
+```
+
+if you want automatic conversion for PDF, Word, PowerPoint, or Excel files. The legacy `knowledge/` directory is still scanned too.
 
 ```bash
 bash index_knowledge.sh

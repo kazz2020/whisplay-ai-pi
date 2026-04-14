@@ -172,6 +172,8 @@ whisplay help                             # Show help
 
 ### Knowledge Base Indexing
 ```bash
+# Add files to data/knowledge/ before indexing. Plain .txt/.md are read directly.
+# Optional document conversion: pip install 'markitdown[pdf,docx,pptx,xlsx,xls]' --break-system-packages
 # Index documents for RAG
 bash index_knowledge.sh
 # or via CLI

@@ -1,7 +1,10 @@
 import { vectorDB, embedText, summaryTextWithLLM, enableRAG } from "../cloud-api/knowledge";
-import { knowledgeDir } from "../utils/dir";
-import fs from "fs";
 import { chunkText } from "../utils/knowledge";
+import {
+  getKnowledgeInputDirs,
+  listKnowledgeSources,
+  loadKnowledgeSourceContent,
+} from "../utils/knowledge-ingest";
 import { v4 as uuidv4 } from "uuid";
 import crypto from "crypto";
 import readline from "readline";
@@ -83,36 +86,45 @@ export async function indexKnowledgeCollection() {
     await vectorDB.createCollection(collectionName, dimension, "Cosine");
   }
 
-  const files = fs
-    .readdirSync(knowledgeDir)
-    .filter((file) => file.endsWith(".txt") || file.endsWith(".md"));
+  const sources = listKnowledgeSources();
 
-  if (!files.length) {
-    console.log("No knowledge files found to index.");
+  if (!sources.length) {
+    console.log(
+      `No knowledge files found to index. Checked: ${getKnowledgeInputDirs().join(", ")}`,
+    );
   }
 
-  const fileSet = new Set(files);
+  const fileSet = new Set(sources.map((source) => source.source));
 
-  for (const file of files) {
-    const filePath = `${knowledgeDir}/${file}`;
-    const content = fs.readFileSync(filePath, "utf-8");
+  for (const source of sources) {
+    const content = loadKnowledgeSourceContent(source);
+    if (!content) {
+      console.log(`Skipping unreadable or unsupported knowledge file: ${source.source}`);
+      continue;
+    }
+
     const fileHash = hashText(content);
 
-    const existingInfo = await getExistingFileInfo(file);
+    const existingInfo = await getExistingFileInfo(source.source);
     if (existingInfo.exists && existingInfo.hash === fileHash) {
-      console.log(`Skipping unchanged file: ${file}`);
+      console.log(`Skipping unchanged file: ${source.source}`);
       continue;
     }
 
     if (existingInfo.exists) {
-      await vectorDB.deletePointsByFilter(collectionName, buildSourceFilter(file));
+      await vectorDB.deletePointsByFilter(
+        collectionName,
+        buildSourceFilter(source.source),
+      );
     }
 
     const chunks = chunkText(content, 500, 80);
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       const embedding = await embedText(chunk);
-      console.log(`Embedding chunk ${i + 1}/${chunks.length} of file ${file}`);
+      console.log(
+        `Embedding chunk ${i + 1}/${chunks.length} of file ${source.source}`,
+      );
       const summary = enableKnowledgeSummary
         ? await summaryTextWithLLM(chunk, promptPrefix)
         : "";
@@ -123,7 +135,7 @@ export async function indexKnowledgeCollection() {
           payload: {
             content: chunk,
             summary,
-            source: file,
+            source: source.source,
             chunkIndex: i,
             fileHash,
           },
@@ -131,7 +143,7 @@ export async function indexKnowledgeCollection() {
       ]);
     }
 
-    console.log(`Indexed file: ${file}`);
+    console.log(`Indexed file: ${source.source}`);
   }
 
   const deletedSources = await getDeletedSources(fileSet);

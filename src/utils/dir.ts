@@ -46,6 +46,12 @@ ensureDirExists(cameraDir);
 export const cameraFeedDir = path.join(dataDir, "camera_feed");
 ensureDirExists(cameraFeedDir);
 
+export const projectRootDir = path.join(__dirname, "../..");
 
-export const knowledgeDir = path.join(__dirname, "../..", "knowledge");
+export const knowledgeDir = path.join(dataDir, "knowledge");
 ensureDirExists(knowledgeDir);
+
+export const legacyKnowledgeDir = path.join(projectRootDir, "knowledge");
+ensureDirExists(legacyKnowledgeDir);
+
+export const knowledgeDirs = [knowledgeDir, legacyKnowledgeDir];
