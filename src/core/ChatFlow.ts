@@ -27,6 +27,9 @@ import { createLatencyTrace, LatencyTrace } from "../utils/trace";
 
 dotEnv.config();
 
+const wakeWordPlayChime =
+  (process.env.WAKE_WORD_PLAY_CHIME || "false").toLowerCase() === "true";
+
 type AmendmentMode = "add" | "replace" | "refine";
 
 const normalizeWhitespace = (text: string): string =>
@@ -687,7 +690,9 @@ class ChatFlow implements ChatFlowContext {
     this.wakeSessionLastSpeechAt = this.wakeSessionStartAt;
     this.endAfterAnswer = false;
     this.wakeWordListener?.stop();
-    playWakeupChime();
+    if (wakeWordPlayChime) {
+      playWakeupChime();
+    }
     this.transitionTo("wake_listening");
   };
 

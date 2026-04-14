@@ -43,6 +43,11 @@ import {
 import { DEFAULT_EMOJI } from "../../utils";
 import { isMusicPlaying, getCurrentTrackTitle, stopMusicPlayback, startPendingMusicPlayback, onMusicTrackChange, onMusicPlaybackEnd } from "../../device/music-player";
 
+const wakeWordVoiceDetectLevelCap = Math.max(
+  1,
+  parseInt(process.env.WAKE_WORD_VOICE_DETECT_LEVEL_CAP || "24", 10),
+);
+
 export const flowStates: Record<FlowName, FlowStateHandler> = {
   sleep: (ctx: ChatFlowContext) => {
     onButtonPressed(() => {
@@ -254,7 +259,12 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
       rag_icon_visible: false,
     });
     getDynamicVoiceDetectLevel().then((level) => {
-      ctx.markTurnTrace("voice_level_ready", { level });
+      const appliedLevel = Math.min(level, wakeWordVoiceDetectLevelCap);
+      ctx.markTurnTrace("voice_level_ready", {
+        level,
+        appliedLevel,
+        wakeWordVoiceDetectLevelCap,
+      });
       let idleTimeoutHandle: NodeJS.Timeout | null = setTimeout(() => {
         idleTimeoutHandle = null;
         if (ctx.currentFlowName !== "wake_listening") {
@@ -278,14 +288,14 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
         status: "listening",
         emoji: DEFAULT_EMOJI,
         RGB: "#00ff00",
-        text: `(Detect level: ${level}%) Listening...`,
+        text: `(Detect level: ${appliedLevel}%) Listening...`,
         rag_icon_visible: false,
       });
       ctx.markTurnTrace("recording_started", {
         mode: "wake",
-        voiceDetectLevel: level,
+        voiceDetectLevel: appliedLevel,
       });
-      recordAudio(ctx.currentRecordFilePath, ctx.wakeRecordMaxSec, level)
+      recordAudio(ctx.currentRecordFilePath, ctx.wakeRecordMaxSec, appliedLevel)
         .then(() => {
           clearIdleTimeout();
           if (ctx.currentFlowName !== "wake_listening") {
