@@ -350,6 +350,20 @@ export const flowStates: Record<FlowName, FlowStateHandler> = {
         return;
       }
       ctx.transitionTo("sleep");
+    }).catch((error) => {
+      if (ctx.currentFlowName !== "asr") return;
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("ASR pipeline failed:", message);
+      ctx.finishTurnTrace("asr_error", { message });
+      display({
+        status: "error",
+        emoji: "⚠️",
+        text: message,
+      });
+      if (ctx.wakeSessionActive) {
+        ctx.endWakeSession();
+      }
+      ctx.transitionTo("sleep");
     });
   },
   answer: (ctx: ChatFlowContext) => {
