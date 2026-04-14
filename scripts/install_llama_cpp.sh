@@ -77,11 +77,8 @@ fi
 log "Configuring llama.cpp"
 cmake "${cmake_args[@]}"
 
-log "Building llama-server and llama-cli"
-cmake --build "${BUILD_DIR}" --config Release --target llama-server llama-cli -j "$(nproc)"
-
-log "Installing llama.cpp runtime and binaries"
-sudo cmake --install "${BUILD_DIR}" --prefix /usr/local
+log "Building and installing llama.cpp runtime and binaries"
+cmake --build "${BUILD_DIR}" --config Release --target install -j "$(nproc)"
 
 if command -v ldconfig >/dev/null 2>&1; then
   log "Refreshing shared library cache"
